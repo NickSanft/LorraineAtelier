@@ -114,10 +114,23 @@ fn reparent_controller(
     let host_i = host.0 as isize;
     let _ = win.with_webview(move |pw| {
         use std::sync::atomic::Ordering;
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2Controller, ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
+        };
+        use windows::core::Interface;
         use windows::Win32::Foundation::{HWND, RECT};
         let controller: ICoreWebView2Controller = pw.controller();
         unsafe {
+            // Dark default background (matches the wallpaper #0b0914) so any
+            // pre-paint moment shows dark instead of a white flash.
+            if let Ok(c2) = controller.cast::<ICoreWebView2Controller2>() {
+                let _ = c2.SetDefaultBackgroundColor(COREWEBVIEW2_COLOR {
+                    A: 255,
+                    R: 0x0b,
+                    G: 0x09,
+                    B: 0x14,
+                });
+            }
             match controller.SetParentWindow(HWND(host_i as *mut core::ffi::c_void)) {
                 Ok(()) => {
                     let _ = controller.SetBounds(RECT {

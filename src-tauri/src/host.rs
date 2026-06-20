@@ -12,12 +12,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{ClientToScreen, CreateSolidBrush};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, RegisterClassW,
-    WINDOW_EX_STYLE, WM_ERASEBKGND, WNDCLASSW, WS_CHILD, WS_VISIBLE,
+    WINDOW_EX_STYLE, WNDCLASSW, WS_CHILD, WS_VISIBLE,
 };
 
 use crate::workerw::Monitor;
@@ -31,12 +31,10 @@ unsafe extern "system" fn host_wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    match msg {
-        // We never paint; the embedded WebView2 covers the whole client area.
-        // Claiming the erase avoids a white flash on (re)attach.
-        WM_ERASEBKGND => LRESULT(1),
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
+    // The class background brush is the dark wallpaper colour, so the brief moment
+    // before the embedded WebView2 paints (a recreate, or resume from pause) shows
+    // dark rather than a white flash. Default handling erases with that brush.
+    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
 fn ensure_class() {
@@ -45,10 +43,13 @@ fn ensure_class() {
     }
     unsafe {
         let hinst: HINSTANCE = GetModuleHandleW(None).map(HINSTANCE::from).unwrap_or_default();
+        // #0b0914 (the wallpaper page background) as a COLORREF (0x00BBGGRR).
+        let brush = CreateSolidBrush(COLORREF(0x0014090b));
         let wc = WNDCLASSW {
             lpfnWndProc: Some(host_wndproc),
             hInstance: hinst,
             lpszClassName: HOST_CLASS,
+            hbrBackground: brush,
             ..Default::default()
         };
         // Returns 0 (and sets last error) if already registered — harmless.

@@ -35,7 +35,10 @@ rendering and there's no flash. It's exposed as a power-saving toggle (e.g. for 
 
 - **Audio release on pause** — there's no audio yet; releasing the shared WASAPI capture when all
   monitors are paused hooks into `update_pause` in **Phase 6**.
-- **Smoothing the resume/recreate flash** — setting the WebView2 controller's
-  `DefaultBackgroundColor` to the wallpaper's dark colour would make the brief flash on resume
-  *and* on the recreate paths (explorer restart, display change) dark instead of white/near-blank.
-  Optional polish; not done yet.
+## Flash polish (done)
+
+The brief white flash when a webview re-composites — on resume from pause, and on the recreate
+paths (explorer restart, display change) — is now **dark/near-invisible**: the host window's class
+background brush is set to the wallpaper colour `#0b0914`, and each WebView2 controller's
+`DefaultBackgroundColor` is set to the same (`ICoreWebView2Controller2::SetDefaultBackgroundColor`).
+Verified: recovery flash is now dark instead of white.
