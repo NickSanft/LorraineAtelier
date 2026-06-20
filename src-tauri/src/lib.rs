@@ -72,6 +72,15 @@ fn slot_labels() -> &'static std::sync::Mutex<Vec<String>> {
     })
 }
 
+/// The monitor geometry `(x, y, w, h, dpi)` each slot's host was last placed for.
+/// A mismatch vs the live monitor means a resolution/DPI change → rebuild the slot.
+#[cfg(windows)]
+fn slot_rects() -> &'static std::sync::Mutex<Vec<(i32, i32, i32, i32, u32)>> {
+    static R: std::sync::OnceLock<std::sync::Mutex<Vec<(i32, i32, i32, i32, u32)>>> =
+        std::sync::OnceLock::new();
+    R.get_or_init(|| std::sync::Mutex::new(vec![(0, 0, 0, 0, 0); MAX_WALLPAPER]))
+}
+
 /// Move a wallpaper window's WebView2 controller into `host` and size it to fill
 /// it. `with_webview` queues the closure until the webview is ready, so this is
 /// safe to call right after creating a fresh window. Sets ATTACHED/EVER_ATTACHED
@@ -167,23 +176,51 @@ fn ensure_attached(app: &AppHandle) {
     let monitors = workerw::enum_monitors();
     let n = monitors.len().min(MAX_WALLPAPER);
 
-    for i in 0..n {
-        let host_raw = HOSTS[i].load(Ordering::Relaxed);
-        let host_alive =
-            host_raw != 0 && workerw::is_window(HWND(host_raw as *mut core::ffi::c_void));
+    // Tear down hosts for slots whose monitor was unplugged (count decreased).
+    for i in n..MAX_WALLPAPER {
+        let h = HOSTS[i].swap(0, Ordering::Relaxed);
+        if h != 0 {
+            host::destroy_host(HWND(h as *mut core::ffi::c_void));
+            ATTACHED[i].store(false, Ordering::Relaxed);
+            slot_rects().lock().unwrap()[i] = (0, 0, 0, 0, 0);
+            log(app, format!("wallpaper-{i}: monitor removed — host destroyed"));
+        }
+    }
 
-        if host_alive && ATTACHED[i].load(Ordering::Relaxed) {
-            continue; // healthy
+    for i in 0..n {
+        let Some(mon) = monitors.get(i) else { continue };
+        let cur = (mon.x, mon.y, mon.width, mon.height, mon.dpi);
+
+        let mut host_raw = HOSTS[i].load(Ordering::Relaxed);
+        let mut host_alive =
+            host_raw != 0 && workerw::is_window(HWND(host_raw as *mut core::ffi::c_void));
+        let stored = slot_rects().lock().unwrap()[i];
+        let attached = ATTACHED[i].load(Ordering::Relaxed);
+
+        if host_alive && attached && stored == cur {
+            continue; // healthy and correctly placed
         }
 
-        let Some(mon) = monitors.get(i) else { continue };
+        // Two cases need a fresh webview (the controller is or would be invalid):
+        //   - host died (explorer restart): its controller is permanently invalid.
+        //   - display geometry/DPI changed while attached: cleanest handled by a
+        //     fresh webview that picks up the new resolution/scale (a brief reload
+        //     on a rare, deliberate action).
+        let host_died = host_raw != 0 && !host_alive;
+        let display_changed = host_alive && attached && stored != cur;
 
-        // A host we created has died → its controller is invalid. Recreate the
-        // webview once, then drop the handle so the cold-create path runs below.
-        if host_raw != 0 && !host_alive {
+        if host_died || display_changed {
+            if display_changed {
+                log(app, format!("wallpaper-{i}: display changed {stored:?} -> {cur:?} — rebuilding"));
+            }
             ATTACHED[i].store(false, Ordering::Relaxed);
             recreate_window(app, i, mon);
+            if host_alive {
+                host::destroy_host(HWND(host_raw as *mut core::ffi::c_void));
+            }
             HOSTS[i].store(0, Ordering::Relaxed);
+            host_raw = 0;
+            host_alive = false;
         }
 
         let Some(worker) = workerw::cached_workerw() else {
@@ -200,16 +237,19 @@ fn ensure_attached(app: &AppHandle) {
                 continue;
             };
             HOSTS[i].store(h.0 as isize, Ordering::Relaxed);
+            let (cw, ch) = host::client_size(h);
             log(
                 app,
                 format!(
-                    "wallpaper-{i}: host created {}x{}@({},{}) dpi={}",
-                    mon.width, mon.height, mon.x, mon.y, mon.dpi
+                    "wallpaper-{i}: host created {}x{}@({},{}) dpi={} client={cw}x{ch}{}",
+                    mon.width, mon.height, mon.x, mon.y, mon.dpi,
+                    if cw == mon.width && ch == mon.height { " OK" } else { " MISMATCH" }
                 ),
             );
             h
         };
 
+        slot_rects().lock().unwrap()[i] = cur;
         let label = slot_labels().lock().unwrap()[i].clone();
         reparent_controller(app, i, &label, host, mon.width, mon.height);
         if let Some(w) = app.get_webview_window(&label) {

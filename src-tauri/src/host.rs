@@ -12,12 +12,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, WINDOW_EX_STYLE,
-    WM_ERASEBKGND, WNDCLASSW, WS_CHILD, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, RegisterClassW,
+    WINDOW_EX_STYLE, WM_ERASEBKGND, WNDCLASSW, WS_CHILD, WS_VISIBLE,
 };
 
 use crate::workerw::Monitor;
@@ -94,5 +94,18 @@ pub fn create_host(parent: HWND, mon: &Monitor) -> Option<HWND> {
 pub fn destroy_host(hwnd: HWND) {
     unsafe {
         let _ = DestroyWindow(hwnd);
+    }
+}
+
+/// The host's client size in physical pixels. Used to assert the no-multiply
+/// placement actually fills the monitor at fractional DPI.
+pub fn client_size(hwnd: HWND) -> (i32, i32) {
+    unsafe {
+        let mut r = RECT::default();
+        if GetClientRect(hwnd, &mut r).is_ok() {
+            (r.right - r.left, r.bottom - r.top)
+        } else {
+            (0, 0)
+        }
     }
 }
