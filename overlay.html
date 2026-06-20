@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inscribe</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+      #scrim {
+        position: fixed; inset: 0; background: rgba(8,6,14,.55);
+        backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+      #label {
+        position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+        font-family: "Cinzel", "Segoe UI", serif; letter-spacing: .3em; text-transform: uppercase;
+        font-size: 13px; color: #e8b84a; opacity: .9; pointer-events: none; text-shadow: 0 0 12px rgba(232,184,74,.5);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scrim"></div>
+    <canvas id="c"></canvas>
+    <div id="label">Inscribe the sigil — Esc to dismiss</div>
+    <script type="module" src="/src/overlay.ts"></script>
+  </body>
+</html>

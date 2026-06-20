@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Atelier wallpaper</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0914; }
+      #bg {
+        position: fixed; inset: 0; background: url(/wallpaper.webp) center/cover no-repeat;
+      }
+      /* warm wash so the parchment art reads as "night atelier" */
+      #tint { position: fixed; inset: 0; background: #2a1d3e; mix-blend-mode: multiply; opacity: .5; }
+      #vignette {
+        position: fixed; inset: 0; pointer-events: none;
+        background: radial-gradient(120% 120% at 50% 40%, transparent 55%, rgba(6,4,12,.72) 100%);
+      }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="bg"></div>
+    <div id="tint"></div>
+    <canvas id="c"></canvas>
+    <div id="vignette"></div>
+    <script type="module" src="/src/wallpaper.ts"></script>
+  </body>
+</html>
