@@ -1,4 +1,6 @@
 #[cfg(windows)]
+mod host;
+#[cfg(windows)]
 mod workerw;
 
 use tauri::menu::{Menu, MenuItem};
@@ -44,57 +46,174 @@ fn overlay_toggle(app: &AppHandle) {
 // Wallpaper windows (declared in config; attached to monitors here)
 // ---------------------------------------------------------------------------
 
-/// Whether each wallpaper window is currently attached. We track this in Rust
-/// rather than via GetParent, because GetParent cannot read our window's
-/// cross-process WorkerW parent (it returns null), which would otherwise make
-/// us re-attach every tick.
+/// Whether each monitor's wallpaper controller is currently homed in its host.
 #[cfg(windows)]
 static ATTACHED: [std::sync::atomic::AtomicBool; MAX_WALLPAPER] =
     [const { std::sync::atomic::AtomicBool::new(false) }; MAX_WALLPAPER];
 
-/// Attach one wallpaper window per monitor under WorkerW (each once). Also the
-/// watchdog path: detects when an explorer restart has destroyed a window.
+/// The native host HWND (as isize) for each monitor, or 0 if none. A non-zero
+/// value that no longer refers to a live window means a host we created has died
+/// (explorer restart) — the trigger to recreate that slot's webview.
+#[cfg(windows)]
+static HOSTS: [std::sync::atomic::AtomicIsize; MAX_WALLPAPER] =
+    [const { std::sync::atomic::AtomicIsize::new(0) }; MAX_WALLPAPER];
+
+/// Incrementing generation for unique runtime wallpaper-window labels.
+#[cfg(windows)]
+static RECREATE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The current webview-window label per monitor slot. Starts as the config
+/// windows (`wallpaper-0..3`); on recovery we create runtime replacements.
+#[cfg(windows)]
+fn slot_labels() -> &'static std::sync::Mutex<Vec<String>> {
+    static L: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+    L.get_or_init(|| {
+        std::sync::Mutex::new((0..MAX_WALLPAPER).map(|i| format!("wallpaper-{i}")).collect())
+    })
+}
+
+/// Move a wallpaper window's WebView2 controller into `host` and size it to fill
+/// it. `with_webview` queues the closure until the webview is ready, so this is
+/// safe to call right after creating a fresh window. Sets ATTACHED/EVER_ATTACHED
+/// on success; the watchdog retries until it sticks.
+#[cfg(windows)]
+fn reparent_controller(
+    app: &AppHandle,
+    i: usize,
+    label: &str,
+    host: windows::Win32::Foundation::HWND,
+    w_px: i32,
+    h_px: i32,
+) {
+    let Some(win) = app.get_webview_window(label) else {
+        return;
+    };
+    let host_i = host.0 as isize;
+    let _ = win.with_webview(move |pw| {
+        use std::sync::atomic::Ordering;
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller;
+        use windows::Win32::Foundation::{HWND, RECT};
+        let controller: ICoreWebView2Controller = pw.controller();
+        unsafe {
+            match controller.SetParentWindow(HWND(host_i as *mut core::ffi::c_void)) {
+                Ok(()) => {
+                    let _ = controller.SetBounds(RECT {
+                        left: 0,
+                        top: 0,
+                        right: w_px,
+                        bottom: h_px,
+                    });
+                    let _ = controller.SetIsVisible(true.into());
+                    ATTACHED[i].store(true, Ordering::Relaxed);
+                }
+                Err(e) => {
+                    // ERROR_INVALID_STATE here means the controller was invalidated
+                    // by its host dying; ensure_attached will recreate the window.
+                    println!("[lorraine] reparent {i}: SetParentWindow failed 0x{:08X}", e.code().0);
+                }
+            }
+        }
+    });
+}
+
+/// Recreate the webview window for a slot whose controller was invalidated by an
+/// explorer restart. Closes the old (dead) window and builds a fresh runtime one
+/// with a new unique label; its fresh controller is reparented by the caller.
+#[cfg(windows)]
+fn recreate_window(app: &AppHandle, i: usize, mon: &workerw::Monitor) {
+    use std::sync::atomic::Ordering;
+    let old = slot_labels().lock().unwrap()[i].clone();
+    if let Some(w) = app.get_webview_window(&old) {
+        let _ = w.close();
+    }
+    let gen = RECREATE_GEN.fetch_add(1, Ordering::Relaxed);
+    let new_label = format!("wp-r{gen}-{i}");
+    slot_labels().lock().unwrap()[i] = new_label.clone();
+    let _ = tauri::WebviewWindowBuilder::new(
+        app,
+        &new_label,
+        tauri::WebviewUrl::App("wallpaper.html".into()),
+    )
+    .title("atelier-wallpaper")
+    .decorations(false)
+    .transparent(true)
+    .skip_taskbar(true)
+    .shadow(false)
+    .focused(false)
+    .visible(false)
+    .additional_browser_args(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
+    )
+    .inner_size(mon.width.max(1) as f64, mon.height.max(1) as f64)
+    .build();
+    log(app, format!("wallpaper-{i}: recreated webview as {new_label}"));
+}
+
+/// Ensure each monitor has a live host with its wallpaper controller homed in it.
+/// Runs at startup and from the watchdog.
+///
+/// Recovery model: a host we created that is now a dead window (explorer restart)
+/// means its controller is permanently invalid (ERROR_INVALID_STATE). We detect
+/// that purely from the host-handle transition — `HOSTS[i]` non-zero but no longer
+/// a live window — recreate the webview ONCE, then clear `HOSTS[i]` so the next
+/// pass cold-creates a fresh host and homes the fresh controller. Driving recovery
+/// off the host handle (not a separate flag) is robust to rapid repeated restarts
+/// and avoids any sync-clear/async-set race.
 #[cfg(windows)]
 fn ensure_attached(app: &AppHandle) {
     use std::sync::atomic::Ordering;
+    use windows::Win32::Foundation::HWND;
+
     let monitors = workerw::enum_monitors();
     let n = monitors.len().min(MAX_WALLPAPER);
 
     for i in 0..n {
-        let Some(w) = app.get_webview_window(&format!("wallpaper-{i}")) else {
+        let host_raw = HOSTS[i].load(Ordering::Relaxed);
+        let host_alive =
+            host_raw != 0 && workerw::is_window(HWND(host_raw as *mut core::ffi::c_void));
+
+        if host_alive && ATTACHED[i].load(Ordering::Relaxed) {
+            continue; // healthy
+        }
+
+        let Some(mon) = monitors.get(i) else { continue };
+
+        // A host we created has died → its controller is invalid. Recreate the
+        // webview once, then drop the handle so the cold-create path runs below.
+        if host_raw != 0 && !host_alive {
+            ATTACHED[i].store(false, Ordering::Relaxed);
+            recreate_window(app, i, mon);
+            HOSTS[i].store(0, Ordering::Relaxed);
+        }
+
+        let Some(worker) = workerw::cached_workerw() else {
+            log(app, "ensure_attached: WorkerW not found yet");
             continue;
         };
-        let Ok(h) = w.hwnd() else { continue };
 
-        if !workerw::is_window(h) {
-            // Explorer restart destroys the WorkerW and, with it, our child
-            // wallpaper windows. Recreating a config webview window at runtime
-            // isn't wired yet (see docs/SLICE1_NOTES) — mark detached so we
-            // don't spin, and surface it.
-            if ATTACHED[i].swap(false, Ordering::Relaxed) {
-                log(app, format!("wallpaper-{i}: destroyed (explorer restart?) — recreation TODO"));
-            }
-            continue;
-        }
-
-        if ATTACHED[i].load(Ordering::Relaxed) {
-            continue; // already attached
-        }
-
-        if let Some(mon) = monitors.get(i) {
-            let worker = workerw::cached_workerw();
-            let ok = workerw::attach(h, worker, mon);
-            let _ = w.show();
-            if ok {
-                ATTACHED[i].store(true, Ordering::Relaxed);
-            }
+        // Ensure a live host exists for this slot.
+        let host = if host_alive {
+            HWND(host_raw as *mut core::ffi::c_void)
+        } else {
+            let Some(h) = host::create_host(worker, mon) else {
+                log(app, format!("wallpaper-{i}: host create failed"));
+                continue;
+            };
+            HOSTS[i].store(h.0 as isize, Ordering::Relaxed);
             log(
                 app,
                 format!(
-                    "wallpaper-{i}: attach={ok} {}x{}@({},{}) dpi={}",
+                    "wallpaper-{i}: host created {}x{}@({},{}) dpi={}",
                     mon.width, mon.height, mon.x, mon.y, mon.dpi
                 ),
             );
+            h
+        };
+
+        let label = slot_labels().lock().unwrap()[i].clone();
+        reparent_controller(app, i, &label, host, mon.width, mon.height);
+        if let Some(w) = app.get_webview_window(&label) {
+            let _ = w.hide(); // the empty shell; the webview now lives in the host
         }
     }
 }
@@ -133,14 +252,15 @@ fn reattach_wallpaper(app: AppHandle) -> String {
 fn detach_wallpaper(app: AppHandle) -> String {
     #[cfg(windows)]
     {
+        use std::sync::atomic::Ordering;
+        use windows::Win32::Foundation::HWND;
+        let _ = app;
         for i in 0..MAX_WALLPAPER {
-            if let Some(w) = app.get_webview_window(&format!("wallpaper-{i}")) {
-                if let Ok(h) = w.hwnd() {
-                    workerw::detach(h);
-                    let _ = w.hide();
-                }
+            let host_raw = HOSTS[i].swap(0, Ordering::Relaxed);
+            if host_raw != 0 {
+                host::destroy_host(HWND(host_raw as *mut core::ffi::c_void));
             }
-            ATTACHED[i].store(false, std::sync::atomic::Ordering::Relaxed);
+            ATTACHED[i].store(false, Ordering::Relaxed);
         }
         return "detached".into();
     }

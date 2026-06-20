@@ -1719,6 +1719,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-global-shortcut",
+ "webview2-com",
  "windows",
 ]
 

@@ -140,6 +140,9 @@ pub fn ensure_workerw() -> Option<HWND> {
 }
 
 /// Re-style `child` as a WS_CHILD of `parent` and place it over `mon`.
+/// Superseded by the host-window + controller-reparent model (see host.rs);
+/// kept as reference for a possible direct-attach fallback.
+#[allow(dead_code)]
 pub fn attach(child: HWND, parent: Option<HWND>, mon: &Monitor) -> bool {
     let Some(parent) = parent else { return false };
     unsafe {
@@ -181,6 +184,7 @@ pub fn attach(child: HWND, parent: Option<HWND>, mon: &Monitor) -> bool {
 }
 
 /// Restore a window to a normal top-level window (used on shutdown).
+#[allow(dead_code)]
 pub fn detach(child: HWND) {
     unsafe {
         let _ = SetParent(child, None);
