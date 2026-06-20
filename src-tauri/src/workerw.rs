@@ -258,6 +258,55 @@ pub fn enum_monitors() -> Vec<Monitor> {
     v
 }
 
+/// True if `mon` is fully covered by a non-shell, non-ours top-level window
+/// (true / borderless fullscreen). Tests the window at the monitor's CENTRE, so it
+/// pauses regardless of focus — a fullscreen window keeps the monitor paused even
+/// when you switch to another window/monitor (no flapping), and a fullscreen
+/// video on a second monitor pauses that monitor while you work on the first.
+/// A *maximized* window leaves the taskbar visible, so it doesn't fully cover the
+/// monitor and is correctly ignored.
+pub fn monitor_covered(mon: &Monitor) -> bool {
+    unsafe {
+        let pt = POINT {
+            x: mon.x + mon.width / 2,
+            y: mon.y + mon.height / 2,
+        };
+        let hit = WindowFromPoint(pt);
+        if hit.0.is_null() {
+            return false;
+        }
+        let root = GetAncestor(hit, GA_ROOT);
+        let top = if root.0.is_null() { hit } else { root };
+
+        // Our own wallpaper/overlay never counts.
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(top, Some(&mut pid));
+        if pid == std::process::id() {
+            return false;
+        }
+        // The desktop / icons / taskbar never count.
+        let mut cls = [0u16; 64];
+        let n = GetClassNameW(top, &mut cls);
+        let class = String::from_utf16_lossy(&cls[..n.max(0) as usize]);
+        if matches!(
+            class.as_str(),
+            "Progman"
+                | "WorkerW"
+                | "SHELLDLL_DefView"
+                | "Shell_TrayWnd"
+                | "Shell_SecondaryTrayWnd"
+                | "Windows.UI.Core.CoreWindow"
+        ) {
+            return false;
+        }
+        let mut r = RECT::default();
+        if GetWindowRect(top, &mut r).is_err() {
+            return false;
+        }
+        r.left <= mon.x && r.top <= mon.y && r.right >= mon.x + mon.width && r.bottom >= mon.y + mon.height
+    }
+}
+
 /// Place a top-level window so it covers the entire virtual desktop (used for
 /// the casting overlay when summoned).
 pub fn cover_virtual_screen(hwnd: HWND) {

@@ -58,6 +58,20 @@ static ATTACHED: [std::sync::atomic::AtomicBool; MAX_WALLPAPER] =
 static HOSTS: [std::sync::atomic::AtomicIsize; MAX_WALLPAPER] =
     [const { std::sync::atomic::AtomicIsize::new(0) }; MAX_WALLPAPER];
 
+/// Whether each monitor's wallpaper is currently paused (foreground fullscreen).
+#[cfg(windows)]
+static PAUSED: [std::sync::atomic::AtomicBool; MAX_WALLPAPER] =
+    [const { std::sync::atomic::AtomicBool::new(false) }; MAX_WALLPAPER];
+
+/// Power-saving option: when true, pause a monitor's wallpaper while a fullscreen
+/// window covers it. **Default OFF** — resuming re-composites the WebView2, which
+/// causes a brief flash, so out of the box we just keep rendering (the idle cost
+/// of a hidden wallpaper is small). Opt-in via `set_pause_on_fullscreen` (e.g. on
+/// a laptop). Wired to a Settings toggle in Phase 7.
+#[cfg(windows)]
+static PAUSE_ON_FULLSCREEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Incrementing generation for unique runtime wallpaper-window labels.
 #[cfg(windows)]
 static RECREATE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -114,6 +128,9 @@ fn reparent_controller(
                     });
                     let _ = controller.SetIsVisible(true.into());
                     ATTACHED[i].store(true, Ordering::Relaxed);
+                    // A fresh/re-homed controller starts visible; let the pause
+                    // pass re-evaluate fullscreen occlusion from a known state.
+                    PAUSED[i].store(false, Ordering::Relaxed);
                 }
                 Err(e) => {
                     // ERROR_INVALID_STATE here means the controller was invalidated
@@ -258,12 +275,63 @@ fn ensure_attached(app: &AppHandle) {
     }
 }
 
+/// Set a wallpaper window's WebView2 controller visibility — the native pause:
+/// `SetIsVisible(false)` stops compositing and throttles the page's rAF, saving
+/// CPU/GPU while a fullscreen app is foreground (the window is hidden behind it
+/// anyway). No JS or capability changes needed.
+#[cfg(windows)]
+fn set_controller_visible(app: &AppHandle, label: &str, visible: bool) {
+    let Some(win) = app.get_webview_window(label) else {
+        return;
+    };
+    let _ = win.with_webview(move |pw| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller;
+        let controller: ICoreWebView2Controller = pw.controller();
+        unsafe {
+            let _ = controller.SetIsVisible(visible.into());
+        }
+    });
+}
+
+/// Pause the wallpaper on a monitor whose foreground window is fullscreen; resume
+/// the others. Honors the KEEP_RUNNING override. (Releasing the shared WASAPI
+/// capture when all monitors are paused hooks in here in Phase 6.)
+#[cfg(windows)]
+fn update_pause(app: &AppHandle) {
+    use std::sync::atomic::Ordering;
+    let monitors = workerw::enum_monitors();
+    let n = monitors.len().min(MAX_WALLPAPER);
+    let enabled = PAUSE_ON_FULLSCREEN.load(Ordering::Relaxed);
+    for i in 0..n {
+        // && short-circuits: when the option is off we never even probe.
+        let want_paused = enabled && workerw::monitor_covered(&monitors[i]);
+        if PAUSED[i].swap(want_paused, Ordering::Relaxed) != want_paused {
+            let label = slot_labels().lock().unwrap()[i].clone();
+            set_controller_visible(app, &label, !want_paused);
+            log(
+                app,
+                format!(
+                    "wallpaper-{i}: {}",
+                    if want_paused {
+                        "paused (covered by fullscreen)"
+                    } else {
+                        "resumed"
+                    }
+                ),
+            );
+        }
+    }
+}
+
 #[cfg(windows)]
 fn spawn_watchdog(app: AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(600));
         let app2 = app.clone();
-        let _ = app.run_on_main_thread(move || ensure_attached(&app2));
+        let _ = app.run_on_main_thread(move || {
+            ensure_attached(&app2);
+            update_pause(&app2);
+        });
     });
 }
 
@@ -324,6 +392,22 @@ fn get_status() -> String {
     }
     #[cfg(not(windows))]
     "noop (non-windows)".into()
+}
+
+/// Power-saving toggle: pause a monitor's wallpaper while a fullscreen window
+/// covers it. Default OFF. (Wired to a Settings toggle in Phase 7.)
+#[tauri::command]
+fn set_pause_on_fullscreen(enabled: bool) -> String {
+    #[cfg(windows)]
+    {
+        PAUSE_ON_FULLSCREEN.store(enabled, std::sync::atomic::Ordering::Relaxed);
+        return format!("pause_on_fullscreen={enabled}");
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        "noop (non-windows)".into()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -404,7 +488,8 @@ pub fn run() {
             reattach_wallpaper,
             detach_wallpaper,
             toggle_overlay,
-            get_status
+            get_status,
+            set_pause_on_fullscreen
         ])
         .on_window_event(|window, event| {
             // Closing the control window hides it to the tray; the wallpaper and
