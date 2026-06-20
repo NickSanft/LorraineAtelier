@@ -1,165 +1,246 @@
-export {}; // ensure module scope (this file has no other imports/exports)
+export {}; // module scope
 
-// Wallpaper surface (Slice 1). Pure Canvas 2D, no audio capture: synthetic
-// "bands" keep the seal breathing so we can verify it's rendering live behind
-// the desktop icons. This is a deliberately small stand-in for the full
-// Atelier visualizer; the real one ports from mockup/Atelier.dc.html.
+// Wallpaper renderer — ported faithfully from mockup/Atelier.dc.html (the spec).
+// Display-only: the wallpaper receives no input, so interactive bits (dock, casting,
+// the real Attune/day-night toggles) live elsewhere. Audio is the prototype's
+// synthetic "bands" for now; Phase 6 will push real WASAPI bands from Rust.
 
-const canvas = document.getElementById("c") as HTMLCanvasElement;
-const ctx = canvas.getContext("2d")!;
+type Mode = "day" | "night";
+// Default mode. Phase 7 settings will make this user-configurable + Rust-driven.
+const MODE: Mode = "night";
 
-let W = 0, H = 0, DPR = 1;
-function resize() {
-  DPR = window.devicePixelRatio || 1;
-  W = canvas.clientWidth;
-  H = canvas.clientHeight;
-  canvas.width = Math.round(W * DPR);
-  canvas.height = Math.round(H * DPR);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+const DAY_VARS: Record<string, string> = {
+  "--c-text": "#241c14", "--c-soft": "rgba(36,28,20,.62)", "--c-faint": "rgba(36,28,20,.4)",
+  "--c-panel": "rgba(244,237,221,.74)", "--c-panel-2": "rgba(244,237,221,.9)",
+  "--c-edge": "rgba(120,90,58,.5)", "--c-gold": "#9c6f2a", "--c-gold-2": "#c79a4c",
+  "--c-teal": "#1d8c80", "--c-ink": "#241c14", "--c-halo": "rgba(247,240,224,.72)",
+};
+const NIGHT_VARS: Record<string, string> = {
+  "--c-text": "#efe6d2", "--c-soft": "rgba(239,230,210,.66)", "--c-faint": "rgba(239,230,210,.4)",
+  "--c-panel": "rgba(22,20,36,.6)", "--c-panel-2": "rgba(22,20,36,.82)",
+  "--c-edge": "rgba(232,184,74,.42)", "--c-gold": "#e8b84a", "--c-gold-2": "#f5d27e",
+  "--c-teal": "#2fd6c6", "--c-ink": "#0d0b16", "--c-halo": "rgba(11,9,20,.62)",
+};
+// Canvas palette (distinct from the CSS vars; mote/glowColor are partial rgba prefixes).
+const PAL = {
+  day: { teal: "#1d8c80", gold: "#b8893a", azure: "#3f6fc4", ink: "#3a2e22", mote: "rgba(120,92,52,", glowMax: 0.5, glowColor: "rgba(180,137,58," },
+  night: { teal: "#2fd6c6", gold: "#e8b84a", azure: "#5a93f0", ink: "#0d0b16", mote: "rgba(120,200,190,", glowMax: 1.0, glowColor: "rgba(47,214,198," },
+};
+// Central sigil cycles through the four element seals (no progression state yet).
+const SIGILS = ["triangle-up", "triangle-down", "circle", "square"];
+
+const root = document.getElementById("root")!;
+const wall = document.getElementById("wall") as HTMLImageElement;
+const tint = document.getElementById("tint")!;
+const glow = document.getElementById("glow")!;
+const ambient = document.getElementById("ambient") as HTMLCanvasElement;
+const viz = document.getElementById("viz") as HTMLCanvasElement;
+const elWeekday = document.getElementById("weekday")!;
+const elTime = document.getElementById("time")!;
+const elAmpm = document.getElementById("ampm")!;
+const elDate = document.getElementById("date")!;
+
+let pal = PAL[MODE];
+
+function applyMode(mode: Mode) {
+  const vars = mode === "night" ? NIGHT_VARS : DAY_VARS;
+  for (const k of Object.keys(vars)) root.style.setProperty(k, vars[k]);
+  wall.style.filter =
+    mode === "night" ? "brightness(.58) saturate(.85) contrast(1.02)" : "brightness(1.02) saturate(1.02)";
+  tint.style.background =
+    mode === "night"
+      ? "radial-gradient(125% 120% at 50% 38%, rgba(44,32,72,.55), rgba(10,8,20,.8))"
+      : "radial-gradient(125% 110% at 50% 8%, rgba(232,200,140,.16), rgba(120,86,46,.22))";
+  tint.style.opacity = mode === "night" ? ".92" : ".5";
+  pal = PAL[mode];
+  glow.style.background = `radial-gradient(circle, ${pal.glowColor}.5), ${pal.glowColor}0) 62%)`;
 }
-window.addEventListener("resize", resize);
-resize();
 
-// Drifting ink motes.
-type Mote = { x: number; y: number; vx: number; vy: number; r: number; a: number };
-const motes: Mote[] = [];
-function seedMotes() {
-  motes.length = 0;
-  const n = Math.round((W * H) / 26000);
+// ---- canvas sizing (DPR-aware; draws work in CSS px via cached _cssw/_cssh) ----
+interface CV extends HTMLCanvasElement { _cssw?: number; _cssh?: number; }
+function sizeCanvas(c: CV) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const r = c.getBoundingClientRect();
+  c.width = Math.max(1, Math.round(r.width * dpr));
+  c.height = Math.max(1, Math.round(r.height * dpr));
+  const ctx = c.getContext("2d")!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c._cssw = r.width;
+  c._cssh = r.height;
+}
+
+interface Mote { x: number; y: number; r: number; s: number; d: number; a: number; gold: boolean; }
+let motes: Mote[] = [];
+function initAmbient() {
+  const c = ambient as CV;
+  const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
+  const n = 56;
+  motes = [];
   for (let i = 0; i < n; i++) {
     motes.push({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.12, vy: -0.05 - Math.random() * 0.12,
-      r: 0.6 + Math.random() * 1.8, a: 0.12 + Math.random() * 0.3,
+      x: Math.random() * w, y: Math.random() * h,
+      r: 0.6 + Math.random() * 2.0, s: 0.15 + Math.random() * 0.5,
+      d: Math.random() * 6.28, a: 0.1 + Math.random() * 0.4, gold: Math.random() < 0.16,
     });
   }
 }
-seedMotes();
-window.addEventListener("resize", seedMotes);
-
-const GOLD = "232,184,74";
-const TEAL = "47,214,198";
-
-function bands(t: number) {
-  // Synthetic FFT stand-in: three slow oscillators in [0,1].
-  const bass = 0.5 + 0.5 * Math.sin(t * 0.0011) * Math.sin(t * 0.0007 + 1);
-  const mid = 0.5 + 0.5 * Math.sin(t * 0.0023 + 2);
-  const high = 0.5 + 0.5 * Math.sin(t * 0.0041 + 4) * Math.cos(t * 0.0017);
-  return { bass, mid, high };
+function sizeAll() {
+  sizeCanvas(ambient);
+  sizeCanvas(viz);
+  initAmbient();
 }
 
-function drawSeal(cx: number, cy: number, t: number, b: ReturnType<typeof bands>) {
-  const base = Math.min(W, H) * 0.16;
-  ctx.save();
-  ctx.translate(cx, cy);
-
-  // luminescent bloom driven by bass
-  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, base * (1.6 + b.bass));
-  glow.addColorStop(0, `rgba(${TEAL},${0.10 + b.bass * 0.22})`);
-  glow.addColorStop(1, "rgba(47,214,198,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(-W, -H, W * 2, H * 2);
-
-  // concentric dashed rings, counter-rotating
-  for (let i = 0; i < 3; i++) {
-    const r = base * (0.6 + i * 0.32) * (1 + b.mid * 0.06);
-    ctx.beginPath();
-    ctx.setLineDash([6, 10 + i * 6]);
-    ctx.lineDashOffset = (t * (0.02 + i * 0.01)) * (i % 2 ? -1 : 1);
-    ctx.strokeStyle = `rgba(${i === 1 ? GOLD : TEAL},${0.35 + b.high * 0.4})`;
-    ctx.lineWidth = 1.3;
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  // radial spokes (high)
-  const spokes = 12;
-  ctx.strokeStyle = `rgba(${GOLD},${0.15 + b.high * 0.5})`;
-  ctx.lineWidth = 1;
-  for (let i = 0; i < spokes; i++) {
-    const a = (i / spokes) * Math.PI * 2 + t * 0.0003;
-    const r0 = base * 0.62, r1 = base * (1.0 + b.high * 0.25);
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
-    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
-    ctx.stroke();
-  }
-
-  // central sigil blooming with bass
-  ctx.fillStyle = `rgba(${GOLD},${0.5 + b.bass * 0.5})`;
-  ctx.beginPath();
-  const pr = base * (0.16 + b.bass * 0.12);
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
-    const rr = i % 2 ? pr : pr * 0.5;
-    const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
-    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+interface Bands { bass: number; mid: number; high: number; }
+let _t = 0;
+function bands(): Bands {
+  const t = _t;
+  return {
+    bass: 0.18 + 0.12 * Math.sin(t * 0.0011) + 0.05 * Math.sin(t * 0.0007),
+    mid: 0.14 + 0.1 * Math.sin(t * 0.0017 + 1),
+    high: 0.08 + 0.07 * Math.sin(t * 0.0029 + 2),
+  };
 }
 
-function drawClock(cx: number, cy: number, t: number) {
-  const r = Math.min(W, H) * 0.12;
-  const now = new Date();
-  ctx.save();
-  ctx.translate(cx, cy);
-
-  // halo for legibility
-  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.5);
-  halo.addColorStop(0, "rgba(11,9,20,.6)");
-  halo.addColorStop(1, "rgba(11,9,20,0)");
-  ctx.fillStyle = halo;
-  ctx.fillRect(-r * 2, -r * 2, r * 4, r * 4);
-
-  // rotating tick ring
-  ctx.rotate((t * 0.00006) % (Math.PI * 2));
-  ctx.strokeStyle = `rgba(${GOLD},.5)`;
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 48; i++) {
-    const a = (i / 48) * Math.PI * 2;
-    const r0 = r * (i % 4 === 0 ? 0.86 : 0.93), r1 = r;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
-    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
-    ctx.stroke();
-  }
-  ctx.rotate(-((t * 0.00006) % (Math.PI * 2)));
-
-  // time text
-  const hh = now.getHours() % 12 || 12;
-  const mm = now.getMinutes().toString().padStart(2, "0");
-  ctx.fillStyle = "#efe6d2";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `${Math.round(r * 0.42)}px "EB Garamond", Georgia, serif`;
-  ctx.fillText(`${hh}:${mm}`, 0, -r * 0.04);
-  ctx.fillStyle = `rgba(${GOLD},.9)`;
-  ctx.font = `${Math.round(r * 0.14)}px "Cinzel", Georgia, serif`;
-  ctx.fillText(now.toLocaleDateString(undefined, { weekday: "long" }).toUpperCase(), 0, r * 0.34);
-  ctx.restore();
-}
-
-function frame(t: number) {
-  ctx.clearRect(0, 0, W, H);
-  const b = bands(t);
-
-  // motes
+function drawAmbient(ts: number, b: Bands) {
+  const c = ambient as CV;
+  if (!motes.length) initAmbient();
+  const ctx = c.getContext("2d")!;
+  const w = c._cssw!, h = c._cssh!;
+  ctx.clearRect(0, 0, w, h);
   for (const m of motes) {
-    m.x += m.vx; m.y += m.vy;
-    if (m.y < -4) { m.y = H + 4; m.x = Math.random() * W; }
-    if (m.x < -4) m.x = W + 4; else if (m.x > W + 4) m.x = -4;
+    m.y -= m.s * (0.6 + b.mid * 1.6);
+    m.x += Math.sin(ts * 0.0004 + m.d) * 0.25;
+    if (m.y < -6) { m.y = h + 6; m.x = Math.random() * w; }
+    const col = m.gold ? pal.glowColor : pal.mote;
+    const al = m.a * (0.5 + 0.5 * Math.sin(ts * 0.001 + m.d));
     ctx.beginPath();
-    ctx.fillStyle = `rgba(${GOLD},${m.a * (0.5 + b.high * 0.5)})`;
-    ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+    ctx.fillStyle = col + al.toFixed(3) + ")";
+    if (m.gold) { ctx.shadowColor = pal.glowColor + "0.8)"; ctx.shadowBlur = 8; } else ctx.shadowBlur = 0;
+    ctx.arc(m.x, m.y, m.r, 0, 6.2832);
     ctx.fill();
   }
-
-  drawSeal(W * 0.34, H * 0.54, t, b);
-  drawClock(W * 0.84, H * 0.22, t);
-
-  requestAnimationFrame(frame);
+  ctx.shadowBlur = 0;
 }
-requestAnimationFrame(frame);
+
+function drawGlyphPath(ctx: CanvasRenderingContext2D, sigil: string, s: number) {
+  ctx.beginPath();
+  if (sigil === "circle") ctx.arc(0, 0, s, 0, 6.2832);
+  else if (sigil === "square") ctx.rect(-s * 0.82, -s * 0.82, s * 1.64, s * 1.64);
+  else if (sigil === "triangle-up") { ctx.moveTo(0, -s); ctx.lineTo(s * 0.92, s * 0.7); ctx.lineTo(-s * 0.92, s * 0.7); ctx.closePath(); }
+  else { ctx.moveTo(0, s); ctx.lineTo(s * 0.92, -s * 0.7); ctx.lineTo(-s * 0.92, -s * 0.7); ctx.closePath(); }
+}
+function attuned(): string { return SIGILS[Math.floor(_t / 4000) % SIGILS.length]; }
+
+function drawViz(ts: number, b: Bands) {
+  const c = viz as CV;
+  const ctx = c.getContext("2d")!;
+  const w = c._cssw!, h = c._cssh!;
+  if (!w || !h) return;
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2;
+  const R = Math.min(w, h) / 2 - 8;
+  const teal = pal.teal, gold = pal.gold;
+  ctx.save();
+  ctx.translate(cx, cy);
+  const rings = [
+    { r: R * 0.98, sp: 0.6, wd: 2.2 },
+    { r: R * 0.74, sp: -0.9, wd: 1.6 },
+    { r: R * 0.5, sp: 1.3, wd: 1.4 },
+  ];
+  rings.forEach((rg, i) => {
+    ctx.beginPath();
+    ctx.strokeStyle = teal;
+    ctx.globalAlpha = 0.28 + (i === 0 ? b.mid : b.high) * 0.5;
+    ctx.lineWidth = rg.wd;
+    ctx.setLineDash([2, 10 + b.mid * 14]);
+    ctx.lineDashOffset = -ts * 0.01 * rg.sp * (0.5 + b.mid * 2);
+    ctx.shadowColor = teal;
+    ctx.shadowBlur = 8 + b.bass * 18;
+    ctx.arc(0, 0, rg.r, 0, 6.2832);
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  const np = 28;
+  for (let i = 0; i < np; i++) {
+    const ang = (i / np) * 6.2832 + ts * 0.0006 * (1 + b.mid * 3);
+    const rr = R * 0.74 + Math.sin(ts * 0.002 + i) * 4;
+    const x = Math.cos(ang) * rr, y = Math.sin(ang) * rr;
+    const al = 0.25 + b.high * 0.7 * (i % 4 === 0 ? 1 : 0.5);
+    ctx.beginPath();
+    ctx.fillStyle = teal;
+    ctx.globalAlpha = Math.min(1, al);
+    ctx.shadowColor = teal;
+    ctx.shadowBlur = 10;
+    ctx.arc(x, y, 1.4 + b.high * 2.6, 0, 6.2832);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 0.12 + b.high * 0.45;
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 0.8;
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * 6.2832 + ts * 0.00008;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5);
+    ctx.lineTo(Math.cos(a) * R * 0.98, Math.sin(a) * R * 0.98);
+    ctx.stroke();
+  }
+  const at = attuned();
+  const s = R * 0.2 * (1 + b.bass * 0.5);
+  ctx.globalAlpha = 0.7 + b.bass * 0.3;
+  ctx.strokeStyle = gold;
+  ctx.fillStyle = gold;
+  ctx.lineWidth = 2.4;
+  ctx.shadowColor = gold;
+  ctx.shadowBlur = 14 + b.bass * 26;
+  drawGlyphPath(ctx, at, s);
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function updateGlow(b: Bands) {
+  glow.style.opacity = (pal.glowMax * (0.12 + b.bass * 0.85)).toFixed(3);
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function updateClock() {
+  const d = new Date();
+  const hh = d.getHours();
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  elWeekday.textContent = WEEKDAYS[d.getDay()];
+  elTime.textContent = h12 + ":" + String(d.getMinutes()).padStart(2, "0");
+  elAmpm.textContent = hh >= 12 ? "PM" : "AM";
+  elDate.textContent = (MONTHS[d.getMonth()] + " " + d.getDate()).toUpperCase();
+}
+
+function tick(ts: number) {
+  _t = ts;
+  const b = bands();
+  drawAmbient(ts, b);
+  drawViz(ts, b);
+  updateGlow(b);
+  requestAnimationFrame(tick);
+}
+
+// Widget size scales with monitor height so widgets stay proportional across
+// resolutions (1440 → 1.5 = +50%; 1080 → ~1.1). Must run before sizeAll() so the
+// scaled canvas bounding box is measured. Phase 7 will make widget size + position
+// user-adjustable per monitor (the movable/resizable feature).
+function setUiScale() {
+  const s = Math.max(1, Math.min(2.2, window.innerHeight / 960));
+  root.style.setProperty("--ui-scale", s.toFixed(3));
+}
+
+setUiScale();
+applyMode(MODE);
+sizeAll();
+window.addEventListener("resize", () => {
+  setUiScale();
+  sizeAll();
+});
+updateClock();
+setInterval(updateClock, 1000);
+requestAnimationFrame(tick);
