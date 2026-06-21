@@ -40,6 +40,11 @@ const SPELLS: &[Spell] = &[
     Spell { key: "water", sigil: "triangle-down", element: "Water", glyph: "▽", app: "Discord", verb: "summoned", hue: "#5a93f0" },
     Spell { key: "wind", sigil: "circle", element: "Wind", glyph: "○", app: "Browser", verb: "unfurled", hue: "#2fd6c6" },
     Spell { key: "earth", sigil: "square", element: "Earth", glyph: "□", app: "Files", verb: "unearthed", hue: "#c79a4c" },
+    // Light: the canon Fire-sigil VARIANT (triangle + a centre dot — detected in the
+    // overlay as a small central mark, so it never collides with Fire in find_spell,
+    // which is keyed off the recognizer's shape). v1 effect is a cosmetic
+    // illumination bloom (no app); bindable in Phase 7. Blooms as the fire triangle.
+    Spell { key: "light", sigil: "triangle-up", element: "Light", glyph: "✦", app: "the atelier", verb: "brightened", hue: "#f5d27e" },
 ];
 
 /// Mirror of the prototype's `spells.find(s=>s.sigil===kind) || ...startsWith(base)`.
@@ -95,6 +100,10 @@ pub struct SigilDto {
     jut_dir: i32,
     secret: bool,
     spell: Option<SpellDto>,
+    // Canon neatness axes (0..1) for the HUD meters; Size is derived in the overlay
+    // (it needs the slate dimensions). Symmetry also feeds the misfire odds.
+    symmetry: f64,
+    steadiness: f64,
 }
 
 #[derive(Serialize)]
@@ -104,6 +113,9 @@ pub struct RingDto {
     /// The reversed / dismiss gesture = a counter-clockwise ring.
     inverse: bool,
     score: i32,
+    /// Normalized end-to-end gap (0 = perfectly closed). A small-but-open ring is a
+    /// canon "prepared" seal the overlay ignites with a closing dot.
+    gap: f64,
 }
 
 #[derive(Serialize)]
@@ -156,6 +168,8 @@ pub fn classify_sigil(points: Vec<Point>) -> SigilDto {
         jut_dir: r.jut_dir,
         secret: r.secret,
         spell,
+        symmetry: r.aspect,
+        steadiness: r.closure * 0.5 + r.regularity * 0.5,
     }
 }
 
@@ -166,7 +180,7 @@ pub fn analyze_ring(points: Vec<Point>, center: Point) -> RingDto {
     // `recognizer.ccw` is `area > 0`, which in screen (y-down) coords is a CLOCKWISE
     // ring — i.e. a normal CAST. The reversed/dismiss gesture is the negation, so a
     // counter-clockwise ring sets `inverse`. (Plan: CW = cast, CCW = dismiss.)
-    RingDto { closed: r.closed, encloses: r.encloses, inverse: !r.ccw, score: r.score.round() as i32 }
+    RingDto { closed: r.closed, encloses: r.encloses, inverse: !r.ccw, score: r.score.round() as i32, gap: r.gap }
 }
 
 /// Commit a cast: the sole side-effecting, atomic step (cursed roll + ink + bloom
@@ -181,6 +195,7 @@ pub fn fire_spell(
     inverse: bool,
     sideways: bool,
     jut_dir: i32,
+    symmetry: f64,
 ) -> FireDto {
     let spell = SPELLS.iter().find(|s| s.key == key);
     let (sigil, glyph, app_name, verb, hue) = match spell {
@@ -188,8 +203,11 @@ pub fn fire_spell(
         None => ("circle", "○", "the app", "cast", "#2fd6c6"),
     };
 
-    // ~13% cursed misfire on a confident, non-reversed, non-sideways cast.
-    let cursed = !inverse && !sideways && score >= 55 && rng_unit() < 0.13;
+    // Cursed misfire on a confident, non-reversed, non-sideways cast. Canon: a
+    // lop-sided (asymmetric) seal is unstable, so low symmetry raises the odds
+    // (~10% at perfect symmetry → ~22% at fully lop-sided).
+    let misfire_chance = 0.10 + (1.0 - symmetry.clamp(0.0, 1.0)) * 0.12;
+    let cursed = !inverse && !sideways && score >= 50 && rng_unit() < misfire_chance;
 
     let new_ink = (INK.load(Ordering::Relaxed) - 22).max(6);
     INK.store(new_ink, Ordering::Relaxed);
@@ -215,6 +233,8 @@ pub fn fire_spell(
         // v1: themed reversed-bloom + toast only. Best-effort WM_CLOSE on a
         // process-name-matched window is a later enhancement (R-DISMISS).
         dismissed = true;
+    } else if key == "light" {
+        // Light is a cosmetic illumination (the bloom IS the effect); no app.
     } else {
         // Focus the app if it's already running (restoring it if minimized);
         // otherwise launch a fresh instance.
@@ -227,6 +247,8 @@ pub fn fire_spell(
     // Toast wording ported from the prototype's fireSpell.
     let (message, icon) = if inverse {
         (format!("↺ The ring reversed — {app_name} dismissed."), "↺")
+    } else if key == "light" {
+        ("✦ Light kindled — the atelier brightens.".to_string(), "✦")
     } else if cursed {
         (format!("The ink curdled — a cursed misfire! …it passes. ({app_name} opened.)"), "◈")
     } else if sideways {

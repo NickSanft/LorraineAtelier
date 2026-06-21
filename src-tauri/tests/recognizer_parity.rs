@@ -35,6 +35,9 @@ struct ClassifyExp {
     #[serde(rename = "jutDir")]
     jut_dir: i32,
     secret: bool,
+    aspect: f64,
+    closure: f64,
+    regularity: f64,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +82,9 @@ fn recognizer_matches_js_oracle() {
         assert!((got.score - e.score).abs() <= SCORE_TOL, "[{}] score {} vs {}", c.name, got.score, e.score);
         assert!((got.gap - e.gap).abs() <= CONT_TOL, "[{}] gap {} vs {}", c.name, got.gap, e.gap);
         assert!((got.circ - e.circ).abs() <= CONT_TOL, "[{}] circ {} vs {}", c.name, got.circ, e.circ);
+        assert!((got.aspect - e.aspect).abs() <= CONT_TOL, "[{}] aspect {} vs {}", c.name, got.aspect, e.aspect);
+        assert!((got.closure - e.closure).abs() <= CONT_TOL, "[{}] closure {} vs {}", c.name, got.closure, e.closure);
+        assert!((got.regularity - e.regularity).abs() <= CONT_TOL, "[{}] regularity {} vs {}", c.name, got.regularity, e.regularity);
     }
 
     for c in &corpus.ring {

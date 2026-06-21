@@ -35,10 +35,11 @@
       .reading .meta { display: flex; flex-direction: column; gap: 2px; }
       #hudName { font-family: "Cinzel", serif; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--c-text); }
       #hudApp { font-size: 12px; color: var(--c-soft); }
-      .neat { display: flex; flex-direction: column; gap: 5px; width: 120px; }
-      .neat .lab { font-family: "Cinzel", serif; font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--c-faint); display: flex; justify-content: space-between; }
-      .neat .track { height: 6px; border-radius: 999px; background: rgba(239,230,210,.12); overflow: hidden; }
-      #neatBar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--c-teal), var(--c-gold)); transition: width .25s ease; }
+      .neat { display: flex; flex-direction: column; gap: 6px; width: 152px; }
+      .neat .m { display: flex; align-items: center; gap: 8px; }
+      .neat .ml { font-family: "Cinzel", serif; font-size: 8px; letter-spacing: .1em; text-transform: uppercase; color: var(--c-faint); width: 56px; text-align: right; }
+      .neat .track { flex: 1; height: 5px; border-radius: 999px; background: rgba(239,230,210,.12); overflow: hidden; }
+      .neat .track > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--c-teal), var(--c-gold)); transition: width .25s ease; }
       .legend { display: flex; gap: 10px; }
       .legend .s { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--c-soft); }
       .legend .g { font-size: 17px; line-height: 1; }
@@ -71,8 +72,9 @@
           </div>
         </div>
         <div class="neat">
-          <div class="lab"><span>Neatness</span><span id="neatPct">—</span></div>
-          <div class="track"><div id="neatBar"></div></div>
+          <div class="m"><span class="ml">Size</span><div class="track"><div id="barSize"></div></div></div>
+          <div class="m"><span class="ml">Steady</span><div class="track"><div id="barSteady"></div></div></div>
+          <div class="m"><span class="ml">Symmetry</span><div class="track"><div id="barSym"></div></div></div>
         </div>
         <div class="legend">
           <div class="s"><span class="g" style="color:#e8954a">△</span><span class="n">Fire</span></div>

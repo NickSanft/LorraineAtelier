@@ -32,6 +32,11 @@ pub struct Classification {
     pub sideways: bool,
     pub jut_dir: i32,
     pub secret: bool,
+    // Neatness sub-components (0..1), surfaced so the UI can show canon
+    // Size/Steadiness/Symmetry meters and so asymmetry can raise the misfire odds.
+    pub aspect: f64,     // w/h balance → Symmetry
+    pub closure: f64,    // how closed the shape is → Steadiness
+    pub regularity: f64, // corner-count / radius regularity → Steadiness
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -228,6 +233,9 @@ pub fn classify(raw: &[Pt]) -> Classification {
             sideways: false,
             jut_dir: 0,
             secret: true,
+            aspect: 0.0,
+            closure: 0.0,
+            regularity: 0.0,
         };
     }
 
@@ -277,7 +285,20 @@ pub fn classify(raw: &[Pt]) -> Classification {
     };
     let score = (8.0f64).max((100.0f64).min((aspect * 0.34 + clos * 0.3 + reg * 0.36) * 100.0));
 
-    Classification { kind, base, score, n_c, circ, gap, sideways, jut_dir, secret: false }
+    Classification {
+        kind,
+        base,
+        score,
+        n_c,
+        circ,
+        gap,
+        sideways,
+        jut_dir,
+        secret: false,
+        aspect,
+        closure: clos,
+        regularity: reg,
+    }
 }
 
 /// Triangle apex orientation. Returns (kind, sideways, jut_dir).

@@ -5,18 +5,27 @@ import { drawGlyphPath } from "./atelier/draw/viz";
 import type { Sigil } from "./atelier/palette";
 
 // Casting overlay — the two-phase slate (the ONLY surface that takes pointer
-// input; the wallpaper behind the icons cannot). The user draws the central
-// SIGIL, then closes the RING to seal it. Recognition is authoritative in Rust
-// (classify_sigil / analyze_ring); fire_spell commits the cast (launch + bloom).
+// input; the wallpaper behind the icons cannot). Draw the central SIGIL, then
+// close the RING to seal it. Recognition is authoritative in Rust (classify_sigil
+// / analyze_ring); fire_spell commits the cast (launch + bloom).
+//
+// Canon refinements (5c):
+//  • Light = the Fire triangle + a small CENTRE DOT (a second mark) → upgrades to
+//    the 5th element. Detected here in the overlay (no recognizer change).
+//  • Three-axis neatness: Size (here) / Steadiness / Symmetry (from Rust).
+//  • Closing-dot instant-cast: a ring drawn with a gap becomes a PREPARED seal you
+//    ignite with a single dot — the iconic instant-cast.
 
 type Pt = { x: number; y: number };
 interface SpellDto { key: string; element: string; glyph: string; app: string; hue: string; sigil: string }
-interface SigilDto { kind: string; base: string; score: number; sideways: boolean; jutDir: number; secret: boolean; spell: SpellDto | null }
-interface RingDto { closed: boolean; encloses: boolean; inverse: boolean; score: number }
+interface SigilDto { kind: string; base: string; score: number; sideways: boolean; jutDir: number; secret: boolean; spell: SpellDto | null; symmetry: number; steadiness: number }
+interface RingDto { closed: boolean; encloses: boolean; inverse: boolean; score: number; gap: number }
 interface FireDto { launched: boolean; cursed: boolean; dismissed: boolean; message: string; icon: string; ink: number; key: string }
 
 const TEAL = "#2fd6c6";
 const GOLD = "#e8b84a";
+// Client-side Light spell (Rust resolves key "light" → cosmetic illumination).
+const LIGHT: SpellDto = { key: "light", element: "Light", glyph: "✦", app: "the atelier", hue: "#f5d27e", sigil: "triangle-up" };
 
 const cast = document.getElementById("cast") as HTMLCanvasElement;
 const cctx = cast.getContext("2d")!;
@@ -24,8 +33,9 @@ const phaseLabel = document.getElementById("phaseLabel")!;
 const hudGlyph = document.getElementById("hudGlyph")!;
 const hudName = document.getElementById("hudName")!;
 const hudApp = document.getElementById("hudApp")!;
-const neatBar = document.getElementById("neatBar") as HTMLElement;
-const neatPct = document.getElementById("neatPct")!;
+const barSize = document.getElementById("barSize") as HTMLElement;
+const barSteady = document.getElementById("barSteady") as HTMLElement;
+const barSym = document.getElementById("barSym") as HTMLElement;
 const toast = document.getElementById("toast") as HTMLElement;
 const toastIcon = document.getElementById("toastIcon")!;
 const toastMsg = document.getElementById("toastMsg")!;
@@ -50,17 +60,19 @@ let curStroke: Pt[] | null = null;
 let detected: SigilDto | null = null;
 let sigilCenter: Pt | null = null;
 let sigilScore = 0;
+let sigilDiag = 0;
+let prepared: { inverse: boolean; ringScore: number } | null = null;
 let blooming = false;
 let bloomRaf = 0;
 
 function reset() {
   cancelAnimationFrame(bloomRaf);
   phase = "sigil"; strokes = []; curStroke = null; detected = null;
-  sigilCenter = null; sigilScore = 0; blooming = false;
+  sigilCenter = null; sigilScore = 0; sigilDiag = 0; prepared = null; blooming = false;
   phaseLabel.textContent = "Draw the central sigil";
   hudGlyph.textContent = "·"; hudGlyph.style.color = "var(--c-soft)";
   hudName.textContent = "Awaiting sigil"; hudApp.textContent = "—";
-  neatBar.style.width = "0%"; neatPct.textContent = "—";
+  setMeters(0, 0, 0);
   toast.style.display = "none";
   drawCast();
 }
@@ -68,6 +80,16 @@ function reset() {
 function pt(e: PointerEvent): Pt {
   const r = cast.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function bboxDiag(stroke: Pt[]): number {
+  let mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
+  for (const p of stroke) { mnx = Math.min(mnx, p.x); mny = Math.min(mny, p.y); mxx = Math.max(mxx, p.x); mxy = Math.max(mxy, p.y); }
+  return Math.hypot(mxx - mnx, mxy - mny);
+}
+// A small mark (a dot/tap) vs a ring: a ring must be large enough to enclose the sigil.
+function isSmallMark(stroke: Pt[]): boolean {
+  return bboxDiag(stroke) < Math.min(W, H) * 0.13;
 }
 
 cast.addEventListener("pointerdown", (e) => {
@@ -83,11 +105,22 @@ cast.addEventListener("pointermove", (e) => {
 cast.addEventListener("pointerup", () => {
   if (!curStroke || blooming) return;
   const stroke = curStroke; curStroke = null;
-  if (stroke.length < 4) { drawCast(); return; }
+
+  if (phase === "sigil") {
+    if (stroke.length < 4) return; // too short to be a sigil
+    strokes.push(stroke);
+    handleSigil(stroke);
+    return;
+  }
+
+  // ring phase — a small mark (incl. a single-point tap) is a dot: it ignites a
+  // prepared seal, or dots the centre of a Fire triangle to gather Light.
+  const small = isSmallMark(stroke);
+  if (prepared && small) { ignitePrepared(); return; }
+  if (!prepared && small && detected?.spell?.key === "fire") { upgradeToLight(); return; }
+  if (stroke.length < 4) return; // a stray short stroke that isn't a dot we handle
   strokes.push(stroke);
-  if (phase === "sigil") handleSigil(stroke);
-  else handleRing(stroke);
-  drawCast();
+  handleRing(stroke);
 });
 
 async function handleSigil(stroke: Pt[]) {
@@ -101,7 +134,7 @@ async function handleSigil(stroke: Pt[]) {
   }
   if (!res.spell) {
     showToast("The sigil is unclear, mono-shirazu — try again.", "✦");
-    strokes.pop(); drawCast();
+    strokes.pop();
     return;
   }
   detected = res;
@@ -109,42 +142,75 @@ async function handleSigil(stroke: Pt[]) {
   for (const p of stroke) { sx += p.x; sy += p.y; }
   sigilCenter = { x: sx / stroke.length, y: sy / stroke.length };
   sigilScore = res.score;
+  sigilDiag = bboxDiag(stroke);
   phase = "ring";
-  phaseLabel.textContent = "Now close the ring to seal it";
-  hudGlyph.textContent = res.spell.glyph; hudGlyph.style.color = res.spell.hue;
-  hudName.textContent = res.spell.element + " Sigil"; hudApp.textContent = "→ " + res.spell.app;
-  setNeat(res.score);
+  phaseLabel.textContent = "Close the ring — or dot the centre for Light";
+  showReading(res.spell);
+  // Size is relative to the slate; Steadiness/Symmetry come from Rust.
+  const size = Math.max(0, Math.min(1, sigilDiag / (Math.min(W, H) * 0.6)));
+  setMeters(size * 100, res.steadiness * 100, res.symmetry * 100);
+}
+
+function upgradeToLight() {
+  if (!detected) return;
+  detected.spell = LIGHT;
+  phaseLabel.textContent = "Light gathers — now close the ring";
+  showReading(LIGHT);
 }
 
 async function handleRing(stroke: Pt[]) {
-  if (!detected || !detected.spell || !sigilCenter) return;
+  if (!detected?.spell || !sigilCenter) return;
   let ring: RingDto;
   try { ring = await invoke<RingDto>("analyze_ring", { points: stroke, center: sigilCenter }); }
   catch { return; }
-  if (!ring.closed) { showToast("The ring is broken — the spell lies dormant.", "◌"); strokes.pop(); drawCast(); return; }
-  if (!ring.encloses) { showToast("The ring must enclose the sigil.", "◌"); strokes.pop(); drawCast(); return; }
-  const finalScore = Math.round(sigilScore * 0.5 + ring.score * 0.5);
-  setNeat(finalScore);
+  if (ring.closed && ring.encloses) { seal(ring.inverse, ring.score); return; }
+  if (ring.encloses && ring.gap < 0.6) {
+    // A deliberate gap → a prepared seal, ignited later by a single dot.
+    prepared = { inverse: ring.inverse, ringScore: ring.score };
+    phaseLabel.textContent = "Seal prepared — dot the gap to ignite";
+    showToast("A gap remains — dot it to ignite.", "◌");
+    return;
+  }
+  if (!ring.encloses) { showToast("The ring must enclose the sigil.", "◌"); strokes.pop(); return; }
+  showToast("The ring is broken — the spell lies dormant.", "◌"); strokes.pop();
+}
+
+function ignitePrepared() {
+  if (!prepared) return;
+  const { inverse, ringScore } = prepared;
+  seal(inverse, ringScore);
+}
+
+async function seal(inverse: boolean, ringScore: number) {
+  if (!detected?.spell) return;
+  const finalScore = Math.round(sigilScore * 0.5 + ringScore * 0.5);
   const spell = detected.spell;
   let fire: FireDto;
   try {
     fire = await invoke<FireDto>("fire_spell", {
-      key: spell.key, score: finalScore, inverse: ring.inverse,
-      sideways: detected.sideways, jutDir: detected.jutDir,
+      key: spell.key, score: finalScore, inverse,
+      sideways: detected.sideways, jutDir: detected.jutDir, symmetry: detected.symmetry,
     });
   } catch { return; }
-  bloom(spell.sigil as Sigil, finalScore, ring.inverse, detected.sideways, detected.jutDir, fire);
+  prepared = null;
+  bloom(spell.sigil as Sigil, finalScore, inverse, detected.sideways, detected.jutDir, fire);
 }
 
-function setNeat(score: number) {
-  neatBar.style.width = Math.max(0, Math.min(100, score)) + "%";
-  neatPct.textContent = score + "%";
+function showReading(spell: SpellDto) {
+  hudGlyph.textContent = spell.glyph; hudGlyph.style.color = spell.hue;
+  hudName.textContent = spell.element + " Sigil";
+  hudApp.textContent = spell.key === "light" ? "→ illumination" : "→ " + spell.app;
+}
+
+function setMeters(sizePct: number, steadyPct: number, symPct: number) {
+  barSize.style.width = Math.max(0, Math.min(100, sizePct)) + "%";
+  barSteady.style.width = Math.max(0, Math.min(100, steadyPct)) + "%";
+  barSym.style.width = Math.max(0, Math.min(100, symPct)) + "%";
 }
 
 // ---- drawing ----
 // Inscribed-ink look: a soft coloured halo + a wet dark-ink body + a bright
-// catching-light core, tinted by the active element once a sigil is recognized
-// (the conjuring ink "catches light" the way it does in the manga).
+// catching-light core, tinted by the active element (conjuring ink "catches light").
 function renderStrokes() {
   cctx.lineJoin = "round"; cctx.lineCap = "round";
   const accent = phase === "ring" && detected?.spell ? detected.spell.hue : TEAL;
@@ -160,7 +226,6 @@ function renderStrokes() {
     cctx.strokeStyle = "rgba(12,10,22,.92)"; cctx.shadowColor = "rgba(8,6,14,.85)"; cctx.shadowBlur = 6; cctx.globalAlpha = 1; cctx.lineWidth = 5.2; path(); cctx.stroke();
     cctx.strokeStyle = "rgba(245,236,206,.92)"; cctx.shadowColor = accent; cctx.shadowBlur = 10; cctx.lineWidth = 1.7; path(); cctx.stroke();
   }
-  // glowing nib at the pen tip while drawing
   if (curStroke && curStroke.length) {
     const p = curStroke[curStroke.length - 1];
     cctx.beginPath(); cctx.fillStyle = accent; cctx.shadowColor = accent; cctx.shadowBlur = 14; cctx.globalAlpha = 0.9;
@@ -174,7 +239,6 @@ function drawCast(ts = 0) {
   const cx = W / 2, cy = H / 2;
   const R = Math.min(W, H) * 0.4;
   cctx.clearRect(0, 0, W, H);
-  // faint central halo so the slate reads as a lit seal canvas
   const halo = cctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.3);
   halo.addColorStop(0, "rgba(232,184,74,.05)");
   halo.addColorStop(1, "rgba(0,0,0,0)");
@@ -197,7 +261,7 @@ function drawCast(ts = 0) {
   cctx.textBaseline = "alphabetic"; cctx.textAlign = "center";
   cctx.fillStyle = phase === "sigil" ? "rgba(239,230,210,.4)" : "rgba(232,184,74,.5)";
   cctx.font = "italic 15px 'EB Garamond', serif";
-  cctx.fillText(phase === "sigil" ? "draw the sigil" : "close the ring", cx, cy - R - 18);
+  cctx.fillText(phase === "sigil" ? "draw the sigil" : prepared ? "dot to ignite" : "close the ring", cx, cy - R - 18);
   renderStrokes();
 }
 
@@ -278,9 +342,6 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape") { reset(); h
   } catch { /* browser preview */ }
 })();
 
-resize();
-reset();
-
 // Continuous idle redraw so the seal canvas breathes (slowly counter-rotating
 // guide rings) while you draw; the bloom animation takes over (this skips) during
 // a cast. rAF throttles to ~0 while the overlay window is hidden.
@@ -289,3 +350,6 @@ function frame(ts: number) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+resize();
+reset();

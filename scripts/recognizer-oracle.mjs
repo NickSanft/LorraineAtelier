@@ -46,7 +46,7 @@ const classify = (raw) => { const pts = _resample(raw, 64); const bb = _bbox(pts
   const marks = []; for (let i = step; i < rot.length - step; i++) { const a = { x: rot[i].x - rot[i - step].x, y: rot[i].y - rot[i - step].y }; const b = { x: rot[i + step].x - rot[i].x, y: rot[i + step].y - rot[i].y }; const ang = Math.abs(_angBetween(a, b)); if (ang > 0.78) marks.push({ i, ang }); }
   const clusters = []; for (const m of marks) { const last = clusters[clusters.length - 1]; if (last && m.i - last.i <= 4) { if (m.ang > last.ang) { last.i = m.i; last.ang = m.ang; } } else clusters.push({ i: m.i, ang: m.ang }); }
   const nC = clusters.length; const peri = _len(pts); const area = Math.abs(_area(pts)); const circ = peri > 0 ? (4 * Math.PI * area) / (peri * peri) : 0;
-  if (nC >= 5 && gap < 0.62) return { type: 'secret', base: 'secret', score: 88, nC, circ, gap, secret: true, sideways: false, jutDir: 0 };
+  if (nC >= 5 && gap < 0.62) return { type: 'secret', base: 'secret', score: 88, nC, circ, gap, secret: true, sideways: false, jutDir: 0, aspect: 0, closure: 0, regularity: 0 };
   let type;
   if (nC >= 4 && gap < 0.5) type = 'square';
   else if (nC === 3) type = 'triangle';
@@ -61,7 +61,7 @@ const classify = (raw) => { const pts = _resample(raw, 64); const bb = _bbox(pts
   if (type === 'circle') { const cx = (bb.mnx + bb.mxx) / 2, cy = (bb.mny + bb.mxy) / 2; const rs = pts.map(q => Math.hypot(q.x - cx, q.y - cy)); const mean = rs.reduce((a, b) => a + b, 0) / rs.length; const v = rs.reduce((a, b) => a + Math.abs(b - mean), 0) / rs.length / (mean || 1); reg = Math.max(0, 1 - v * 1.8);
   } else { const ideal = type === 'square' ? 4 : 3; reg = Math.max(0, 1 - Math.abs(nC - ideal) * 0.28); }
   const score = Math.max(8, Math.min(100, (aspect * 0.34 + clos * 0.3 + reg * 0.36) * 100));
-  return { type, base, score, nC, circ, gap, sideways, jutDir };
+  return { type, base, score, nC, circ, gap, sideways, jutDir, aspect, closure: clos, regularity: reg };
 };
 const analyzeRing = (raw, center) => { const pts = _resample(raw, 64); const bb = _bbox(pts); const diag = Math.hypot(bb.w, bb.h) || 1; const gap = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) / diag; const closed = gap < 0.3; const peri = _len(pts); const area = _area(pts); const acirc = Math.abs(area); const circ = peri > 0 ? (4 * Math.PI * acirc) / (peri * peri) : 0;
   let inside = false; if (center) { for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y; const intersect = ((yi > center.y) !== (yj > center.y)) && (center.x < (xj - xi) * (center.y - yi) / ((yj - yi) || 1e-9) + xi); if (intersect) inside = !inside; } }
@@ -98,7 +98,7 @@ const centroid = (pts) => { let sx = 0, sy = 0; for (const p of pts) { sx += p.x
 
 // Sigil fixtures (classify).
 const sigilCases = [];
-const addSig = (name, pts) => { const r = classify(pts); sigilCases.push({ name, points: toPairs(pts), expected: { kind: r.type, base: r.base, nC: r.nC, score: r.score, gap: r.gap, circ: r.circ, sideways: !!r.sideways, jutDir: r.jutDir || 0, secret: !!r.secret } }); };
+const addSig = (name, pts) => { const r = classify(pts); sigilCases.push({ name, points: toPairs(pts), expected: { kind: r.type, base: r.base, nC: r.nC, score: r.score, gap: r.gap, circ: r.circ, sideways: !!r.sideways, jutDir: r.jutDir || 0, secret: !!r.secret, aspect: r.aspect, closure: r.closure, regularity: r.regularity } }); };
 
 addSig("circle_cw_clean", circlePts(150, 150, 100, 96, true));
 addSig("circle_ccw_clean", circlePts(150, 150, 100, 96, false));

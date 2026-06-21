@@ -401,7 +401,10 @@
         "circ": 0.9991612289262485,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 1,
+        "closure": 0.9999999999999998,
+        "regularity": 0.9990356418487197
       }
     },
     {
@@ -805,7 +808,10 @@
         "circ": 0.9991612289262496,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 1,
+        "closure": 0.9999999999999998,
+        "regularity": 0.9990356418487197
       }
     },
     {
@@ -1209,7 +1215,10 @@
         "circ": 0.9448068355354138,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 0.9914130557511565,
+        "closure": 0.9903532415676178,
+        "regularity": 0.9767676747252383
       }
     },
     {
@@ -1485,7 +1494,10 @@
         "circ": 0.802437709258506,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 1,
+        "closure": 0.9999999999999989,
+        "regularity": 1
       }
     },
     {
@@ -1761,7 +1773,10 @@
         "circ": 0.7506329857780556,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 0.985407544883952,
+        "closure": 0.9920750267807732,
+        "regularity": 1
       }
     },
     {
@@ -2045,7 +2060,10 @@
         "circ": 0.6179463693779679,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 0.9974518563913488,
+        "closure": 1,
+        "regularity": 1
       }
     },
     {
@@ -2329,7 +2347,10 @@
         "circ": 0.6168234325477712,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 0.9621508281006159,
+        "closure": 1,
+        "regularity": 1
       }
     },
     {
@@ -2613,7 +2634,10 @@
         "circ": 0.6179463693779682,
         "sideways": true,
         "jutDir": -1,
-        "secret": false
+        "secret": false,
+        "aspect": 0.9974518563913488,
+        "closure": 0.9999999999999996,
+        "regularity": 1
       }
     },
     {
@@ -2897,7 +2921,10 @@
         "circ": 0.6179463693779677,
         "sideways": true,
         "jutDir": 1,
-        "secret": false
+        "secret": false,
+        "aspect": 0.9974518563913487,
+        "closure": 1,
+        "regularity": 1
       }
     },
     {
@@ -3181,7 +3208,10 @@
         "circ": 0.5806654455876529,
         "sideways": false,
         "jutDir": 0,
-        "secret": false
+        "secret": false,
+        "aspect": 0.9946085878761322,
+        "closure": 0.9903705263720195,
+        "regularity": 1
       }
     },
     {
@@ -3521,7 +3551,10 @@
         "circ": 0.21679781972492684,
         "sideways": false,
         "jutDir": 0,
-        "secret": true
+        "secret": true,
+        "aspect": 0,
+        "closure": 0,
+        "regularity": 0
       }
     },
     {
@@ -3861,7 +3894,10 @@
         "circ": 0.2113965722638863,
         "sideways": false,
         "jutDir": 0,
-        "secret": true
+        "secret": true,
+        "aspect": 0,
+        "closure": 0,
+        "regularity": 0
       }
     }
   ],
