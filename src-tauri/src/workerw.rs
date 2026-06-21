@@ -21,6 +21,10 @@ use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, TRUE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
 };
+
+/// MONITORINFOF_PRIMARY — the `dwFlags` bit marking the primary monitor. Not
+/// re-exported in our windows-rs feature set, so we use its documented value.
+const MONITORINFOF_PRIMARY: u32 = 1;
 use windows::Win32::UI::HiDpi::{
     GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
     MDT_EFFECTIVE_DPI,
@@ -34,6 +38,14 @@ pub struct Monitor {
     pub width: i32,
     pub height: i32,
     pub dpi: u32,
+    pub primary: bool,
+    // Work area (`rcWork`): the monitor minus any space-reserving (pinned, non-
+    // auto-hide) taskbar / appbars, in the same physical virtual-desktop coords.
+    // Equals the full monitor rect when the taskbar auto-hides (reserves nothing).
+    pub work_x: i32,
+    pub work_y: i32,
+    pub work_w: i32,
+    pub work_h: i32,
 }
 
 /// Declare PerMonitorV2 awareness. Call before any window is created. Harmless
@@ -227,6 +239,7 @@ unsafe extern "system" fn monitor_proc(
     };
     if GetMonitorInfoW(hmon, &mut mi).as_bool() {
         let r = mi.rcMonitor; // physical pixels (PerMonitorV2 process)
+        let wr = mi.rcWork; // monitor minus space-reserving taskbar/appbars
         let (mut dx, mut dy) = (96u32, 96u32);
         let _ = GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
         v.push(Monitor {
@@ -235,6 +248,11 @@ unsafe extern "system" fn monitor_proc(
             width: r.right - r.left,
             height: r.bottom - r.top,
             dpi: dx,
+            primary: (mi.dwFlags & MONITORINFOF_PRIMARY) != 0,
+            work_x: wr.left,
+            work_y: wr.top,
+            work_w: wr.right - wr.left,
+            work_h: wr.bottom - wr.top,
         });
     }
     TRUE
@@ -246,12 +264,23 @@ pub fn enum_monitors() -> Vec<Monitor> {
     unsafe {
         let _ = EnumDisplayMonitors(None, None, Some(monitor_proc), LPARAM(&mut v as *mut _ as isize));
         if v.is_empty() {
+            let (vx, vy, vw, vh) = (
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+                GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                GetSystemMetrics(SM_CYVIRTUALSCREEN),
+            );
             v.push(Monitor {
-                x: GetSystemMetrics(SM_XVIRTUALSCREEN),
-                y: GetSystemMetrics(SM_YVIRTUALSCREEN),
-                width: GetSystemMetrics(SM_CXVIRTUALSCREEN),
-                height: GetSystemMetrics(SM_CYVIRTUALSCREEN),
+                x: vx,
+                y: vy,
+                width: vw,
+                height: vh,
                 dpi: 96,
+                primary: true,
+                work_x: vx,
+                work_y: vy,
+                work_w: vw,
+                work_h: vh,
             });
         }
     }

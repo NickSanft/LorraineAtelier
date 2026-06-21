@@ -76,6 +76,16 @@ static PAUSE_ON_FULLSCREEN: std::sync::atomic::AtomicBool =
 #[cfg(windows)]
 static RECREATE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
+/// The live monitor list, refreshed each `ensure_attached` pass. The brushbuddy
+/// thread reads this to roam in virtual-desktop coordinates and to know which
+/// monitor is primary (full widgets) vs secondary (calm art only).
+#[cfg(windows)]
+fn monitors_store() -> &'static std::sync::Mutex<Vec<workerw::Monitor>> {
+    static M: std::sync::OnceLock<std::sync::Mutex<Vec<workerw::Monitor>>> =
+        std::sync::OnceLock::new();
+    M.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
 /// The current webview-window label per monitor slot. Starts as the config
 /// windows (`wallpaper-0..3`); on recovery we create runtime replacements.
 #[cfg(windows)]
@@ -205,6 +215,8 @@ fn ensure_attached(app: &AppHandle) {
 
     let monitors = workerw::enum_monitors();
     let n = monitors.len().min(MAX_WALLPAPER);
+    // Publish the (capped) monitor list for the brushbuddy thread.
+    *monitors_store().lock().unwrap() = monitors[..n].to_vec();
 
     // Tear down hosts for slots whose monitor was unplugged (count decreased).
     for i in n..MAX_WALLPAPER {
@@ -345,6 +357,218 @@ fn spawn_watchdog(app: AppHandle) {
             ensure_attached(&app2);
             update_pause(&app2);
         });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Brushbuddy — a single ink companion that roams ACROSS all monitors.
+// ---------------------------------------------------------------------------
+//
+// The buddy lives in virtual-desktop coordinates (the same physical-pixel space
+// the monitors are placed in). One thread ticks a gentle wander state machine
+// ~30 Hz and, for each monitor's wallpaper webview, emits a `buddy` event with
+// the buddy's position in THAT window's local coordinates. The buddy is only
+// `visible` on the monitor whose horizontal range currently contains it (its
+// "owner"), so it appears to walk off the edge of one screen and onto the next.
+// Its y eases toward the owner monitor's ground line, so crossing a seam between
+// vertically-offset monitors makes it rise/dip into place.
+
+/// Payload pushed to each wallpaper webview ~30 Hz. Coordinates are the buddy's
+/// CENTER in that window's local pixels; the frontend offsets by the sprite half-
+/// size and applies its own ui-scale.
+#[cfg(windows)]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BuddyMsg {
+    /// Destination webview label. Tauri 2.11's `EventTarget::Any` listeners bypass
+    /// `emit_to` label filtering (every webview sees every emit), so the frontend
+    /// also filters on this — it acts only on the message addressed to its label.
+    label: String,
+    x: f64,
+    y: f64,
+    visible: bool,
+    flip: f64,
+    eye: f64,
+    primary: bool,
+    // Taskbar/appbar safe-area insets for this monitor, in physical px. The
+    // frontend insets the whole scene into the work area so the dock/widgets/art
+    // sit above a space-reserving taskbar (0 when it auto-hides).
+    inset_top: f64,
+    inset_bottom: f64,
+    inset_left: f64,
+    inset_right: f64,
+}
+
+/// Tiny xorshift64* PRNG — avoids pulling in the `rand` crate just for a wander.
+#[cfg(windows)]
+struct Rng(u64);
+#[cfg(windows)]
+impl Rng {
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+    fn unit(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+    fn range(&mut self, lo: f64, hi: f64) -> f64 {
+        lo + self.unit() * (hi - lo)
+    }
+}
+
+/// Index of the monitor whose horizontal range contains `x`; if `x` is in a gap,
+/// the horizontally-nearest monitor.
+#[cfg(windows)]
+fn owner_index(mons: &[workerw::Monitor], x: f64) -> usize {
+    for (i, m) in mons.iter().enumerate() {
+        if x >= m.x as f64 && x < (m.x + m.width) as f64 {
+            return i;
+        }
+    }
+    let mut best = 0usize;
+    let mut best_d = f64::MAX;
+    for (i, m) in mons.iter().enumerate() {
+        let cx = m.x as f64 + m.width as f64 * 0.5;
+        let d = (cx - x).abs();
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+    best
+}
+
+#[cfg(windows)]
+fn spawn_buddy(app: AppHandle) {
+    std::thread::spawn(move || {
+        const TICK_MS: u64 = 33; // ~30 Hz
+        const GROUND: f64 = 112.0; // px above a monitor's bottom the buddy walks
+        const SPEED: f64 = 3.4; // px/tick while walking
+        const ARRIVE: f64 = 6.0; // distance to target that counts as "arrived"
+        const Y_LERP: f64 = 0.11; // vertical ease toward owner ground (seam rise)
+        const TWO_PI: f64 = std::f64::consts::PI * 2.0;
+
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0x9E37_79B9_7F4A_7C15)
+            | 1;
+        let mut rng = Rng(seed);
+
+        // Buddy state (virtual-desktop coords).
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+        let mut tx = 0.0f64;
+        let mut flip = 1.0f64;
+        let mut rest = 0i32; // ticks remaining at rest (0 = walking)
+        let mut napping = false;
+        let mut eye = 1.0f64;
+        let mut blink = 0i32;
+        let mut bob = 0.0f64;
+        let mut started = false;
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
+
+            let mons = monitors_store().lock().unwrap().clone();
+            let n = mons.len();
+            if n == 0 {
+                started = false;
+                continue;
+            }
+
+            if !started {
+                let p = mons.iter().find(|m| m.primary).unwrap_or(&mons[0]);
+                x = p.x as f64 + p.width as f64 * 0.5;
+                y = (p.y + p.height) as f64 - GROUND;
+                tx = x;
+                rest = 40;
+                started = true;
+            }
+
+            let owner = owner_index(&mons, x);
+            let om = mons[owner];
+            // Walk along the work-area bottom so the buddy stays above a pinned
+            // taskbar (work area == full monitor when the taskbar auto-hides).
+            let ground = (om.work_y + om.work_h) as f64 - GROUND;
+
+            if rest > 0 {
+                rest -= 1;
+                if rest == 0 {
+                    napping = false;
+                }
+            } else {
+                let dx = tx - x;
+                if dx.abs() <= ARRIVE {
+                    // Arrived: rest (sometimes a longer nap), then pick a new target.
+                    if rng.unit() < 0.26 {
+                        napping = true;
+                        rest = rng.range(90.0, 220.0) as i32; // ~3–7 s nap
+                    } else {
+                        rest = rng.range(18.0, 70.0) as i32; // brief pause
+                    }
+                    // 45% of the time aim for a DIFFERENT monitor → cross the seam.
+                    let tgt = if n > 1 && rng.unit() < 0.45 {
+                        let mut k = (rng.unit() * n as f64) as usize % n;
+                        if k == owner {
+                            k = (owner + 1) % n;
+                        }
+                        mons[k]
+                    } else {
+                        om
+                    };
+                    let margin = (tgt.width as f64 * 0.10).min(120.0);
+                    tx = tgt.x as f64 + rng.range(margin, tgt.width as f64 - margin);
+                } else {
+                    x += SPEED.min(dx.abs()) * dx.signum();
+                    flip = if dx >= 0.0 { 1.0 } else { -1.0 };
+                    bob = (bob + 0.34) % TWO_PI;
+                }
+            }
+
+            // Ease y toward the owner monitor's ground (seam rise/dip).
+            y += (ground - y) * Y_LERP;
+
+            // Eyes: closed while napping; otherwise the occasional blink.
+            let eye_target = if napping {
+                0.12
+            } else if blink > 0 {
+                blink -= 1;
+                if blink > 0 { 0.1 } else { 1.0 }
+            } else {
+                if rng.unit() < 0.012 {
+                    blink = 6; // ~0.2 s blink
+                }
+                1.0
+            };
+            eye += (eye_target - eye) * 0.4;
+
+            let bob_off = if rest == 0 { bob.sin() * 1.6 } else { 0.0 };
+
+            let labels = slot_labels().lock().unwrap().clone();
+            for i in 0..n {
+                let Some(label) = labels.get(i) else { continue };
+                let m = mons[i];
+                let msg = BuddyMsg {
+                    label: label.clone(),
+                    x: x - m.x as f64,
+                    y: y - m.y as f64 + bob_off,
+                    visible: i == owner,
+                    flip,
+                    eye,
+                    primary: m.primary,
+                    inset_top: (m.work_y - m.y) as f64,
+                    inset_bottom: ((m.y + m.height) - (m.work_y + m.work_h)) as f64,
+                    inset_left: (m.work_x - m.x) as f64,
+                    inset_right: ((m.x + m.width) - (m.work_x + m.work_w)) as f64,
+                };
+                let _ = app.emit_to(label.as_str(), "buddy", msg);
+            }
+        }
     });
 }
 
@@ -536,6 +760,7 @@ pub fn run() {
             if let tauri::RunEvent::Ready = _event {
                 ensure_attached(_handle);
                 spawn_watchdog(_handle.clone());
+                spawn_buddy(_handle.clone());
             }
         });
 }

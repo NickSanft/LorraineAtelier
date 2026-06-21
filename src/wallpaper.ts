@@ -1,33 +1,30 @@
 export {}; // module scope
 
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+
+// Pure-logic core (DOM-free, unit-tested) extracted under src/atelier/*.
+import type { Mode } from "./atelier/palette";
+import {
+  PAL,
+  SIGILS,
+  getVarsForMode,
+  getWallFilterForMode,
+  getTintBackgroundForMode,
+  getTintOpacityForMode,
+} from "./atelier/palette";
+import { bands } from "./atelier/audio/generative";
+import { makeMotes, drawAmbient, type Mote } from "./atelier/draw/ambient";
+import { drawViz, attuned } from "./atelier/draw/viz";
+import { glowOpacity } from "./atelier/draw/glow";
+
 // Wallpaper renderer — ported faithfully from mockup/Atelier.dc.html (the spec).
 // Display-only: the wallpaper receives no input, so interactive bits (dock, casting,
 // the real Attune/day-night toggles) live elsewhere. Audio is the prototype's
 // synthetic "bands" for now; Phase 6 will push real WASAPI bands from Rust.
 
-type Mode = "day" | "night";
 // Default mode. Phase 7 settings will make this user-configurable + Rust-driven.
 const MODE: Mode = "night";
-
-const DAY_VARS: Record<string, string> = {
-  "--c-text": "#241c14", "--c-soft": "rgba(36,28,20,.62)", "--c-faint": "rgba(36,28,20,.4)",
-  "--c-panel": "rgba(244,237,221,.74)", "--c-panel-2": "rgba(244,237,221,.9)",
-  "--c-edge": "rgba(120,90,58,.5)", "--c-gold": "#9c6f2a", "--c-gold-2": "#c79a4c",
-  "--c-teal": "#1d8c80", "--c-ink": "#241c14", "--c-halo": "rgba(247,240,224,.72)",
-};
-const NIGHT_VARS: Record<string, string> = {
-  "--c-text": "#efe6d2", "--c-soft": "rgba(239,230,210,.66)", "--c-faint": "rgba(239,230,210,.4)",
-  "--c-panel": "rgba(22,20,36,.6)", "--c-panel-2": "rgba(22,20,36,.82)",
-  "--c-edge": "rgba(232,184,74,.42)", "--c-gold": "#e8b84a", "--c-gold-2": "#f5d27e",
-  "--c-teal": "#2fd6c6", "--c-ink": "#0d0b16", "--c-halo": "rgba(11,9,20,.62)",
-};
-// Canvas palette (distinct from the CSS vars; mote/glowColor are partial rgba prefixes).
-const PAL = {
-  day: { teal: "#1d8c80", gold: "#b8893a", azure: "#3f6fc4", ink: "#3a2e22", mote: "rgba(120,92,52,", glowMax: 0.5, glowColor: "rgba(180,137,58," },
-  night: { teal: "#2fd6c6", gold: "#e8b84a", azure: "#5a93f0", ink: "#0d0b16", mote: "rgba(120,200,190,", glowMax: 1.0, glowColor: "rgba(47,214,198," },
-};
-// Central sigil cycles through the four element seals (no progression state yet).
-const SIGILS = ["triangle-up", "triangle-down", "circle", "square"];
 
 const root = document.getElementById("root")!;
 const wall = document.getElementById("wall") as HTMLImageElement;
@@ -40,20 +37,43 @@ const elTime = document.getElementById("time")!;
 const elAmpm = document.getElementById("ampm")!;
 const elDate = document.getElementById("date")!;
 
+// ---- Asset rendition selection by physical width ----
+// The base art (the gift's wallpaper) ships at /wallpaper.webp and is used on
+// every monitor. Higher-resolution per-monitor renditions are the gift-
+// personalization step: drop e.g. wallpaper@3440.webp into public/ and add it to
+// RENDITIONS so big monitors pick it up. Listing only files that actually exist
+// means no request ever 404s; onerror is a final safety net back to the base.
+const BASE_ART = "/wallpaper.webp";
+const RENDITIONS: { minWidth: number; src: string }[] = [
+  // { minWidth: 2561, src: "/wallpaper@3440.webp" },
+  // { minWidth: 1921, src: "/wallpaper@1920.webp" },
+];
+const physicalWidth = window.innerWidth * (window.devicePixelRatio || 1);
+const chosen = RENDITIONS
+  .filter((r) => physicalWidth >= r.minWidth)
+  .sort((a, b) => b.minWidth - a.minWidth)[0];
+// Set the error handler BEFORE assigning src so a failed load falls back to base.
+wall.onerror = () => {
+  if (!wall.src.endsWith(BASE_ART)) {
+    wall.onerror = null; // avoid loops if the base itself is missing
+    wall.src = BASE_ART;
+  }
+};
+wall.src = chosen ? chosen.src : BASE_ART;
+
 let pal = PAL[MODE];
+let uiScale = 1;
+let motes: Mote[] = [];
 
 function applyMode(mode: Mode) {
-  const vars = mode === "night" ? NIGHT_VARS : DAY_VARS;
+  const vars = getVarsForMode(mode);
   for (const k of Object.keys(vars)) root.style.setProperty(k, vars[k]);
-  wall.style.filter =
-    mode === "night" ? "brightness(.58) saturate(.85) contrast(1.02)" : "brightness(1.02) saturate(1.02)";
-  tint.style.background =
-    mode === "night"
-      ? "radial-gradient(125% 120% at 50% 38%, rgba(44,32,72,.55), rgba(10,8,20,.8))"
-      : "radial-gradient(125% 110% at 50% 8%, rgba(232,200,140,.16), rgba(120,86,46,.22))";
-  tint.style.opacity = mode === "night" ? ".92" : ".5";
+  wall.style.filter = getWallFilterForMode(mode);
+  tint.style.background = getTintBackgroundForMode(mode);
+  tint.style.opacity = getTintOpacityForMode(mode);
   pal = PAL[mode];
   glow.style.background = `radial-gradient(circle, ${pal.glowColor}.5), ${pal.glowColor}0) 62%)`;
+  updateDockDisplay(mode);
 }
 
 // ---- canvas sizing (DPR-aware; draws work in CSS px via cached _cssw/_cssh) ----
@@ -69,140 +89,118 @@ function sizeCanvas(c: CV) {
   c._cssh = r.height;
 }
 
-interface Mote { x: number; y: number; r: number; s: number; d: number; a: number; gold: boolean; }
-let motes: Mote[] = [];
-function initAmbient() {
-  const c = ambient as CV;
-  const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
-  const n = 56;
-  motes = [];
-  for (let i = 0; i < n; i++) {
-    motes.push({
-      x: Math.random() * w, y: Math.random() * h,
-      r: 0.6 + Math.random() * 2.0, s: 0.15 + Math.random() * 0.5,
-      d: Math.random() * 6.28, a: 0.1 + Math.random() * 0.4, gold: Math.random() < 0.16,
-    });
-  }
-}
 function sizeAll() {
   sizeCanvas(ambient);
   sizeCanvas(viz);
-  initAmbient();
-}
-
-interface Bands { bass: number; mid: number; high: number; }
-let _t = 0;
-function bands(): Bands {
-  const t = _t;
-  return {
-    bass: 0.18 + 0.12 * Math.sin(t * 0.0011) + 0.05 * Math.sin(t * 0.0007),
-    mid: 0.14 + 0.1 * Math.sin(t * 0.0017 + 1),
-    high: 0.08 + 0.07 * Math.sin(t * 0.0029 + 2),
-  };
-}
-
-function drawAmbient(ts: number, b: Bands) {
   const c = ambient as CV;
-  if (!motes.length) initAmbient();
+  const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
+  motes = makeMotes(w, h, 56);
+}
+
+function drawAmbientFrame(ts: number, b: ReturnType<typeof bands>) {
+  const c = ambient as CV;
+  if (!motes.length) sizeAll();
   const ctx = c.getContext("2d")!;
-  const w = c._cssw!, h = c._cssh!;
-  ctx.clearRect(0, 0, w, h);
-  for (const m of motes) {
-    m.y -= m.s * (0.6 + b.mid * 1.6);
-    m.x += Math.sin(ts * 0.0004 + m.d) * 0.25;
-    if (m.y < -6) { m.y = h + 6; m.x = Math.random() * w; }
-    const col = m.gold ? pal.glowColor : pal.mote;
-    const al = m.a * (0.5 + 0.5 * Math.sin(ts * 0.001 + m.d));
-    ctx.beginPath();
-    ctx.fillStyle = col + al.toFixed(3) + ")";
-    if (m.gold) { ctx.shadowColor = pal.glowColor + "0.8)"; ctx.shadowBlur = 8; } else ctx.shadowBlur = 0;
-    ctx.arc(m.x, m.y, m.r, 0, 6.2832);
-    ctx.fill();
-  }
-  ctx.shadowBlur = 0;
+  drawAmbient(ctx, motes, c._cssw!, c._cssh!, ts, b, pal);
 }
 
-function drawGlyphPath(ctx: CanvasRenderingContext2D, sigil: string, s: number) {
-  ctx.beginPath();
-  if (sigil === "circle") ctx.arc(0, 0, s, 0, 6.2832);
-  else if (sigil === "square") ctx.rect(-s * 0.82, -s * 0.82, s * 1.64, s * 1.64);
-  else if (sigil === "triangle-up") { ctx.moveTo(0, -s); ctx.lineTo(s * 0.92, s * 0.7); ctx.lineTo(-s * 0.92, s * 0.7); ctx.closePath(); }
-  else { ctx.moveTo(0, s); ctx.lineTo(s * 0.92, -s * 0.7); ctx.lineTo(-s * 0.92, -s * 0.7); ctx.closePath(); }
-}
-function attuned(): string { return SIGILS[Math.floor(_t / 4000) % SIGILS.length]; }
-
-function drawViz(ts: number, b: Bands) {
+function drawVizFrame(ts: number, b: ReturnType<typeof bands>) {
   const c = viz as CV;
   const ctx = c.getContext("2d")!;
-  const w = c._cssw!, h = c._cssh!;
-  if (!w || !h) return;
-  ctx.clearRect(0, 0, w, h);
-  const cx = w / 2, cy = h / 2;
-  const R = Math.min(w, h) / 2 - 8;
-  const teal = pal.teal, gold = pal.gold;
-  ctx.save();
-  ctx.translate(cx, cy);
-  const rings = [
-    { r: R * 0.98, sp: 0.6, wd: 2.2 },
-    { r: R * 0.74, sp: -0.9, wd: 1.6 },
-    { r: R * 0.5, sp: 1.3, wd: 1.4 },
-  ];
-  rings.forEach((rg, i) => {
-    ctx.beginPath();
-    ctx.strokeStyle = teal;
-    ctx.globalAlpha = 0.28 + (i === 0 ? b.mid : b.high) * 0.5;
-    ctx.lineWidth = rg.wd;
-    ctx.setLineDash([2, 10 + b.mid * 14]);
-    ctx.lineDashOffset = -ts * 0.01 * rg.sp * (0.5 + b.mid * 2);
-    ctx.shadowColor = teal;
-    ctx.shadowBlur = 8 + b.bass * 18;
-    ctx.arc(0, 0, rg.r, 0, 6.2832);
-    ctx.stroke();
-  });
-  ctx.setLineDash([]);
-  const np = 28;
-  for (let i = 0; i < np; i++) {
-    const ang = (i / np) * 6.2832 + ts * 0.0006 * (1 + b.mid * 3);
-    const rr = R * 0.74 + Math.sin(ts * 0.002 + i) * 4;
-    const x = Math.cos(ang) * rr, y = Math.sin(ang) * rr;
-    const al = 0.25 + b.high * 0.7 * (i % 4 === 0 ? 1 : 0.5);
-    ctx.beginPath();
-    ctx.fillStyle = teal;
-    ctx.globalAlpha = Math.min(1, al);
-    ctx.shadowColor = teal;
-    ctx.shadowBlur = 10;
-    ctx.arc(x, y, 1.4 + b.high * 2.6, 0, 6.2832);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 0.12 + b.high * 0.45;
-  ctx.strokeStyle = gold;
-  ctx.lineWidth = 0.8;
-  ctx.shadowBlur = 0;
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * 6.2832 + ts * 0.00008;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5);
-    ctx.lineTo(Math.cos(a) * R * 0.98, Math.sin(a) * R * 0.98);
-    ctx.stroke();
-  }
-  const at = attuned();
-  const s = R * 0.2 * (1 + b.bass * 0.5);
-  ctx.globalAlpha = 0.7 + b.bass * 0.3;
-  ctx.strokeStyle = gold;
-  ctx.fillStyle = gold;
-  ctx.lineWidth = 2.4;
-  ctx.shadowColor = gold;
-  ctx.shadowBlur = 14 + b.bass * 26;
-  drawGlyphPath(ctx, at, s);
-  ctx.stroke();
-  ctx.restore();
-  ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0;
+  drawViz(ctx, c._cssw!, c._cssh!, ts, b, pal, attuned(ts, SIGILS));
 }
 
-function updateGlow(b: Bands) {
-  glow.style.opacity = (pal.glowMax * (0.12 + b.bass * 0.85)).toFixed(3);
+// ---- DockMirror (display-only) glue ----
+// The dock in wallpaper.html is static markup with pointer-events:none and no
+// handlers. This refreshes the day/night indicator (and could refresh the ink
+// gauge) when MODE changes. No event listeners are attached — the no-input gate
+// stays green. Initial markup already matches MODE="night" / 78% ink, so on first
+// run this is a no-op; it exists for the Rust-driven mode switch in Phase 7.
+function updateDockDisplay(mode: Mode, inkPercent?: number) {
+  const modeIndicator = document.getElementById("modeIndicator");
+  const inkLevelBar = document.getElementById("inkLevel");
+  if (modeIndicator) {
+    const isNight = mode === "night";
+    modeIndicator.innerHTML =
+      `<span style="font-size:calc(19px * var(--ui-scale,1));line-height:1;color:var(--c-gold)">${isNight ? "☾" : "☀"}</span>` +
+      `<span style="font-family:'Cinzel',serif;font-size:calc(8px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">${isNight ? "Night" : "Day"}</span>`;
+  }
+  if (inkLevelBar && inkPercent != null) {
+    inkLevelBar.style.height = Math.max(0, Math.min(100, inkPercent)) + "%";
+  }
 }
+
+// ---- brushbuddy: a single ink companion that roams ACROSS all monitors ----
+// Rust owns the buddy in virtual-desktop coordinates and pushes a `buddy` event
+// to each monitor's wallpaper webview ~30 Hz (see spawn_buddy in lib.rs). Each
+// window draws it in its own local coords and shows it only while it owns the
+// buddy, so it walks off one screen and onto the next. The same event carries the
+// `primary` flag that drives the primary/secondary widget split below.
+interface BuddyMsg {
+  label: string; x: number; y: number; visible: boolean; flip: number; eye: number; primary: boolean;
+  insetTop: number; insetBottom: number; insetLeft: number; insetRight: number;
+}
+const buddyEl = document.getElementById("buddy");
+const buddyEyes = document.getElementById("buddyEyes");
+const clockEl = document.getElementById("clock");
+const sealEl = document.getElementById("seal");
+const topStripEl = document.getElementById("topstrip");
+const dockEl = document.getElementById("dock");
+let isPrimary: boolean | null = null;
+// This webview's own label. Rust emits each monitor's buddy message to its slot
+// label AND stamps the label into the payload; we act only on our own (Tauri 2.11
+// `EventTarget::Any` listeners otherwise receive every window's emit).
+const selfLabel = getCurrentWebviewWindow().label;
+if (buddyEl) buddyEl.style.transformOrigin = "24px 21px"; // sprite centre, for scaling
+if (buddyEyes) buddyEyes.style.transformOrigin = "center 23px";
+
+// Primary monitor shows the full widgets (clock + seal + top strip + dock);
+// secondary monitors stay calm — just art, ambient motes, glow, and the passing
+// buddy. Restore each element's natural display (#topstrip + #dock are flex; the
+// rest block).
+function applyPrimary(primary: boolean) {
+  if (primary === isPrimary) return;
+  isPrimary = primary;
+  if (clockEl) clockEl.style.display = primary ? "block" : "none";
+  if (sealEl) sealEl.style.display = primary ? "block" : "none";
+  if (topStripEl) topStripEl.style.display = primary ? "flex" : "none";
+  if (dockEl) dockEl.style.display = primary ? "flex" : "none";
+}
+
+// ---- taskbar-aware safe area ----
+// Inset the whole scene (#root holds the art + every widget) into the monitor's
+// work area, so a pinned/locked taskbar gets its own strip and nothing — art,
+// border, dock, buddy — is clipped behind it. An auto-hidden taskbar reserves no
+// work area, so insets are 0 and the scene fills the monitor edge-to-edge. Insets
+// arrive in physical px (Rust work area); convert to CSS px. The buddy is a child
+// of #root, so its translate is offset by the left/top inset.
+let curInsets = "";
+let insetLeftCss = 0, insetTopCss = 0;
+function applyInsets(top: number, right: number, bottom: number, left: number) {
+  const key = `${top},${right},${bottom},${left}`;
+  if (key === curInsets) return;
+  curInsets = key;
+  const dpr = window.devicePixelRatio || 1;
+  insetTopCss = top / dpr;
+  insetLeftCss = left / dpr;
+  root.style.top = insetTopCss + "px";
+  root.style.right = (right / dpr) + "px";
+  root.style.bottom = (bottom / dpr) + "px";
+  root.style.left = insetLeftCss + "px";
+  sizeAll(); // canvases now cover the (possibly smaller) work area
+}
+
+listen<BuddyMsg>("buddy", (e) => {
+  const m = e.payload;
+  if (m.label !== selfLabel) return; // ignore other monitors' messages (cross-talk guard)
+  applyPrimary(m.primary);
+  applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
+  if (!buddyEl) return;
+  buddyEl.style.opacity = m.visible ? "1" : "0";
+  buddyEl.style.transform =
+    `translate(${m.x - 24 - insetLeftCss}px, ${m.y - 21 - insetTopCss}px) scale(${m.flip * uiScale}, ${uiScale})`;
+  if (buddyEyes) buddyEyes.style.transform = `scaleY(${m.eye.toFixed(3)})`;
+}, { target: selfLabel });
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -217,11 +215,10 @@ function updateClock() {
 }
 
 function tick(ts: number) {
-  _t = ts;
-  const b = bands();
-  drawAmbient(ts, b);
-  drawViz(ts, b);
-  updateGlow(b);
+  const b = bands(ts);
+  drawAmbientFrame(ts, b);
+  drawVizFrame(ts, b);
+  glow.style.opacity = glowOpacity(b, pal);
   requestAnimationFrame(tick);
 }
 
@@ -230,8 +227,8 @@ function tick(ts: number) {
 // scaled canvas bounding box is measured. Phase 7 will make widget size + position
 // user-adjustable per monitor (the movable/resizable feature).
 function setUiScale() {
-  const s = Math.max(1, Math.min(2.2, window.innerHeight / 960));
-  root.style.setProperty("--ui-scale", s.toFixed(3));
+  uiScale = Math.max(1, Math.min(2.2, window.innerHeight / 960));
+  root.style.setProperty("--ui-scale", uiScale.toFixed(3));
 }
 
 setUiScale();

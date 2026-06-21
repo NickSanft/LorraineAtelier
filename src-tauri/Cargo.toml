@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
 
 [features]
 # Serve the embedded frontend (../dist) instead of the dev server. `tauri build`
