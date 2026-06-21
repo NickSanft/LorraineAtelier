@@ -14,6 +14,16 @@ pub enum LaunchTarget {
 }
 
 impl LaunchTarget {
+    /// Build from a user-configurable mapping string: empty or "files" → Explorer,
+    /// otherwise a URL/protocol/path opened by the shell default handler.
+    pub fn from_target(s: &str) -> Self {
+        if s.trim().is_empty() || s.eq_ignore_ascii_case("files") {
+            LaunchTarget::Files
+        } else {
+            LaunchTarget::Open(s.to_string())
+        }
+    }
+
     pub fn launch(&self) -> std::io::Result<()> {
         #[cfg(windows)]
         {
@@ -39,14 +49,3 @@ impl LaunchTarget {
     }
 }
 
-/// Default launch target for each element key. Phase 7 will make these
-/// user-configurable in the control window's Spell Bindings panel.
-pub fn default_target(key: &str) -> LaunchTarget {
-    match key {
-        "fire" => LaunchTarget::Open("steam://open/main".into()),
-        "water" => LaunchTarget::Open("discord://".into()),
-        "wind" => LaunchTarget::Open("https://www.google.com".into()),
-        "earth" => LaunchTarget::Files,
-        _ => LaunchTarget::Files,
-    }
-}

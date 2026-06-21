@@ -714,6 +714,20 @@ fn toggle_mode(app: AppHandle) -> String {
     next.to_string()
 }
 
+/// Set the launch target for an element key (Spell Bindings panel). Persisted.
+#[tauri::command]
+fn set_mapping(key: String, target: String) -> String {
+    settings::set_mapping(key.clone(), target.clone());
+    format!("{key} -> {target}")
+}
+
+/// Restore the default sigil→app bindings.
+#[tauri::command]
+fn reset_mappings() -> String {
+    settings::reset_mappings();
+    "mappings reset".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -819,11 +833,14 @@ pub fn run() {
             get_settings,
             set_mode,
             toggle_mode,
+            set_mapping,
+            reset_mappings,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
             casting::analyze_ring,
-            casting::fire_spell
+            casting::fire_spell,
+            casting::test_launch
         ])
         .on_window_event(|window, event| {
             // Closing the control window hides it to the tray; the wallpaper and

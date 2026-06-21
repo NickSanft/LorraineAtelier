@@ -1,5 +1,6 @@
 // Control window: the Atelier's settings panel. Toggles drive Rust commands and
-// stay in sync with the tray (which can toggle the same state).
+// stay in sync with the tray (which can toggle the same state). The Spell Bindings
+// panel edits the persisted sigil→app mappings.
 const logEl = document.getElementById("log")!;
 function append(line: string) {
   const t = new Date().toLocaleTimeString();
@@ -9,6 +10,14 @@ function append(line: string) {
 const modeBtn = document.getElementById("mode") as HTMLButtonElement;
 const attuneBtn = document.getElementById("attune") as HTMLButtonElement;
 const pauseBtn = document.getElementById("pause") as HTMLButtonElement;
+const bindingsEl = document.getElementById("bindings")!;
+
+const ELEMENTS = [
+  { key: "fire", glyph: "△", name: "Fire", hue: "#e8954a" },
+  { key: "water", glyph: "▽", name: "Water", hue: "#5a93f0" },
+  { key: "wind", glyph: "○", name: "Wind", hue: "#2fd6c6" },
+  { key: "earth", glyph: "□", name: "Earth", hue: "#c79a4c" },
+];
 
 let mode: "day" | "night" = "night";
 let attuned = false;
@@ -27,6 +36,8 @@ function renderPause() {
   pauseBtn.classList.toggle("on", pauseOn);
 }
 
+interface SettingsDto { mode: string; pauseOnFullscreen: boolean; mappings: Record<string, string> }
+
 async function main() {
   let core: typeof import("@tauri-apps/api/core");
   let event: typeof import("@tauri-apps/api/event");
@@ -39,10 +50,38 @@ async function main() {
   }
   const invoke = core.invoke;
 
+  function buildBindings(mappings: Record<string, string>) {
+    bindingsEl.innerHTML = "";
+    for (const el of ELEMENTS) {
+      const row = document.createElement("div");
+      row.className = "brow";
+      const g = document.createElement("span");
+      g.className = "bg"; g.textContent = el.glyph; g.style.color = el.hue;
+      const n = document.createElement("span");
+      n.className = "bn"; n.textContent = el.name;
+      const inp = document.createElement("input");
+      inp.className = "bt"; inp.value = mappings[el.key] ?? ""; inp.spellcheck = false;
+      inp.title = "URL, protocol (steam://, discord://), path, or 'files' for Explorer";
+      inp.addEventListener("change", () => {
+        invoke("set_mapping", { key: el.key, target: inp.value.trim() }).then(() => append(`bind ${el.key} → ${inp.value.trim() || "files"}`));
+      });
+      const test = document.createElement("button");
+      test.className = "test"; test.textContent = "Test";
+      test.addEventListener("click", async () => {
+        await invoke("set_mapping", { key: el.key, target: inp.value.trim() });
+        invoke("test_launch", { key: el.key }).then((r) => append(String(r)));
+      });
+      row.append(g, n, inp, test);
+      bindingsEl.appendChild(row);
+    }
+    document.getElementById("bindingsPanel")!.style.display = "flex";
+  }
+
   try {
-    const s = await invoke<{ mode: string; pauseOnFullscreen: boolean }>("get_settings");
+    const s = await invoke<SettingsDto>("get_settings");
     mode = s.mode === "day" ? "day" : "night";
     pauseOn = !!s.pauseOnFullscreen;
+    buildBindings(s.mappings || {});
   } catch (e) {
     append("get_settings ✗ " + e);
   }
@@ -61,6 +100,13 @@ async function main() {
     pauseOn = !pauseOn;
     renderPause();
     await invoke("set_pause_on_fullscreen", { enabled: pauseOn });
+  });
+
+  document.getElementById("resetBindings")!.addEventListener("click", async () => {
+    await invoke("reset_mappings");
+    const s = await invoke<SettingsDto>("get_settings");
+    buildBindings(s.mappings || {});
+    append("bindings reset to defaults");
   });
 
   document.getElementById("reattach")!.addEventListener("click", () => invoke("reattach_wallpaper").then(() => append("re-attach requested")));

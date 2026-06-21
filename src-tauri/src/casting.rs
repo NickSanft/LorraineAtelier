@@ -236,10 +236,13 @@ pub fn fire_spell(
     } else if key == "light" {
         // Light is a cosmetic illumination (the bloom IS the effect); no app.
     } else {
-        // Focus the app if it's already running (restoring it if minimized);
-        // otherwise launch a fresh instance.
-        if !activate_for_key(&key) {
-            let _ = launcher::default_target(&key).launch();
+        // Resolve the user-configurable target. For a still-default binding, focus a
+        // running instance first (restore if minimized); for a custom binding just
+        // launch it (process-name activation wouldn't match an arbitrary target).
+        let target = crate::settings::mapping_for(&key).unwrap_or_else(|| "files".into());
+        let is_default = crate::settings::default_mappings().get(&key).map_or(false, |d| *d == target);
+        if !(is_default && activate_for_key(&key)) {
+            let _ = launcher::LaunchTarget::from_target(&target).launch();
         }
         launched = true;
     }
@@ -262,6 +265,19 @@ pub fn fire_spell(
     };
 
     FireDto { launched, cursed, dismissed, message, icon: icon.into(), ink: new_ink, key }
+}
+
+/// Launch (or focus) an element's bound app without drawing — for the Spell
+/// Bindings panel's per-row "Test" button.
+#[tauri::command]
+pub fn test_launch(key: String) -> String {
+    let target = crate::settings::mapping_for(&key).unwrap_or_else(|| "files".into());
+    let is_default = crate::settings::default_mappings().get(&key).map_or(false, |d| *d == target);
+    if is_default && activate_for_key(&key) {
+        return format!("focused {key}");
+    }
+    let _ = launcher::LaunchTarget::from_target(&target).launch();
+    format!("launched {key} -> {target}")
 }
 
 /// Tiny time-seeded xorshift64* for the cursed-misfire roll. Not cryptographic and
