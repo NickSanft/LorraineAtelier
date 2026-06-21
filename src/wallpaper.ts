@@ -15,7 +15,8 @@ import {
 } from "./atelier/palette";
 import { bands } from "./atelier/audio/generative";
 import { makeMotes, drawAmbient, type Mote } from "./atelier/draw/ambient";
-import { drawViz, attuned, drawGlyphPath } from "./atelier/draw/viz";
+import { attuned, drawGlyphPath } from "./atelier/draw/viz";
+import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
 import { glowOpacity } from "./atelier/draw/glow";
 
 // Wallpaper renderer — ported faithfully from mockup/Atelier.dc.html (the spec).
@@ -106,10 +107,12 @@ function drawAmbientFrame(ts: number, b: ReturnType<typeof bands>) {
   drawAmbient(ctx, motes, c._cssw!, c._cssh!, ts, b, pal);
 }
 
-function drawVizFrame(ts: number, b: ReturnType<typeof bands>) {
+const sealState = makeSealState();
+function drawVizFrame(ts: number, b: ReturnType<typeof bands>, dt: number) {
   const c = viz as CV;
   const ctx = c.getContext("2d")!;
-  drawViz(ctx, c._cssw!, c._cssh!, ts, b, pal, attuned(ts, SIGILS));
+  stepSeal(sealState, b, dt);
+  drawSeal(ctx, c._cssw!, c._cssh!, sealState, pal, attuned(ts, SIGILS));
 }
 
 // ---- DockMirror (display-only) glue ----
@@ -279,10 +282,13 @@ function updateClock() {
   elDate.textContent = (MONTHS[d.getMonth()] + " " + d.getDate()).toUpperCase();
 }
 
+let lastTs = 0;
 function tick(ts: number) {
+  const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.016;
+  lastTs = ts;
   const b = bands(ts);
   drawAmbientFrame(ts, b);
-  drawVizFrame(ts, b);
+  drawVizFrame(ts, b, dt);
   glow.style.opacity = glowOpacity(b, pal);
   requestAnimationFrame(tick);
 }
