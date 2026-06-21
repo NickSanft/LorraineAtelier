@@ -16,6 +16,9 @@ mod launcher;
 #[cfg(windows)]
 mod audio;
 
+/// Persisted settings (day/night mode, spell bindings, pause) for the control UI.
+mod settings;
+
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
@@ -678,19 +681,37 @@ fn viz_status() -> bool {
 }
 
 /// Power-saving toggle: pause a monitor's wallpaper while a fullscreen window
-/// covers it. Default OFF. (Wired to a Settings toggle in Phase 7.)
+/// covers it. Default OFF. Persisted in settings.
 #[tauri::command]
-fn set_pause_on_fullscreen(enabled: bool) -> String {
+fn set_pause_on_fullscreen(_app: AppHandle, enabled: bool) -> String {
+    settings::set_pause(enabled);
     #[cfg(windows)]
-    {
-        PAUSE_ON_FULLSCREEN.store(enabled, std::sync::atomic::Ordering::Relaxed);
-        return format!("pause_on_fullscreen={enabled}");
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = enabled;
-        "noop (non-windows)".into()
-    }
+    PAUSE_ON_FULLSCREEN.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    format!("pause_on_fullscreen={enabled}")
+}
+
+/// The current persisted settings (mode / mappings / pause) for the control UI
+/// and the wallpaper's initial day/night state.
+#[tauri::command]
+fn get_settings() -> settings::Settings {
+    settings::get()
+}
+
+/// Set day/night mode; persists and broadcasts `settings:mode` so every wallpaper
+/// window transitions.
+#[tauri::command]
+fn set_mode(app: AppHandle, mode: String) -> String {
+    settings::set_mode(&app, mode.clone());
+    format!("mode={mode}")
+}
+
+/// Flip day↔night off the AUTHORITATIVE persisted state (not a client-side guess),
+/// so a toggle can never set the mode it's already in. Returns the new mode.
+#[tauri::command]
+fn toggle_mode(app: AppHandle) -> String {
+    let next = if settings::get().mode == "day" { "night" } else { "day" };
+    settings::set_mode(&app, next.to_string());
+    next.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -700,10 +721,11 @@ fn set_pause_on_fullscreen(enabled: bool) -> String {
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let inscribe = MenuItem::with_id(app, "inscribe", "Inscribe (overlay)", true, None::<&str>)?;
     let attune = MenuItem::with_id(app, "attune", "Attune to music (toggle)", true, None::<&str>)?;
+    let mode = MenuItem::with_id(app, "mode", "Day / Night (toggle)", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show control", true, None::<&str>)?;
     let reattach = MenuItem::with_id(app, "reattach", "Re-attach wallpaper", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&inscribe, &attune, &show, &reattach, &quit])?;
+    let menu = Menu::with_items(app, &[&inscribe, &attune, &mode, &show, &reattach, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("lorraine-tray")
         .tooltip("Lorraine Atelier")
@@ -722,6 +744,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                         audio::start(app.clone());
                     }
                 }
+            }
+            "mode" => {
+                let next = if settings::get().mode == "day" { "night" } else { "day" };
+                settings::set_mode(app, next.to_string());
             }
             "show" => {
                 if let Some(w) = app.get_webview_window("main") {
@@ -770,6 +796,10 @@ pub fn run() {
     #[cfg(windows)]
     workerw::set_dpi_awareness();
 
+    // Load persisted settings BEFORE the Builder creates windows, so the wallpaper
+    // webviews' early get_settings sees the real mode (not the default).
+    settings::load();
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -786,6 +816,9 @@ pub fn run() {
             toggle_overlay,
             get_status,
             set_pause_on_fullscreen,
+            get_settings,
+            set_mode,
+            toggle_mode,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
@@ -804,6 +837,11 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
+            #[cfg(windows)]
+            PAUSE_ON_FULLSCREEN.store(
+                settings::get().pause_on_fullscreen,
+                std::sync::atomic::Ordering::Relaxed,
+            );
             if let Err(e) = setup_tray(app) {
                 log(&handle, format!("tray setup failed: {e}"));
             }
@@ -825,6 +863,9 @@ pub fn run() {
                 ensure_attached(_handle);
                 spawn_watchdog(_handle.clone());
                 spawn_buddy(_handle.clone());
+                // Belt-and-suspenders: re-broadcast the persisted mode once windows
+                // exist, in case any wallpaper pulled before settings were loaded.
+                let _ = _handle.emit("settings:mode", settings::get().mode);
             }
         });
 }

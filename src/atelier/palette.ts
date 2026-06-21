@@ -4,11 +4,14 @@
 
 export type Mode = "day" | "night";
 
+// Day palette is tuned for legibility over the bright artwork: dark, fairly opaque
+// text + strong light halos/panels behind the widgets so they read against busy,
+// varied background colours.
 export const DAY_VARS: Record<string, string> = {
-  "--c-text": "#241c14", "--c-soft": "rgba(36,28,20,.62)", "--c-faint": "rgba(36,28,20,.4)",
-  "--c-panel": "rgba(244,237,221,.74)", "--c-panel-2": "rgba(244,237,221,.9)",
-  "--c-edge": "rgba(120,90,58,.5)", "--c-gold": "#9c6f2a", "--c-gold-2": "#c79a4c",
-  "--c-teal": "#1d8c80", "--c-ink": "#241c14", "--c-halo": "rgba(247,240,224,.72)",
+  "--c-text": "#1f1709", "--c-soft": "rgba(28,20,10,.9)", "--c-faint": "rgba(28,20,10,.68)",
+  "--c-panel": "rgba(248,242,228,.95)", "--c-panel-2": "rgba(251,246,234,.98)",
+  "--c-edge": "rgba(104,76,44,.62)", "--c-gold": "#855a1f", "--c-gold-2": "#a87b2b",
+  "--c-teal": "#15756a", "--c-ink": "#1f1709", "--c-halo": "rgba(253,248,238,.94)",
 };
 
 export const NIGHT_VARS: Record<string, string> = {
@@ -30,7 +33,7 @@ export interface CanvasPalette {
 }
 
 export const PAL: Record<Mode, CanvasPalette> = {
-  day: { teal: "#1d8c80", gold: "#b8893a", azure: "#3f6fc4", ink: "#3a2e22", mote: "rgba(120,92,52,", glowMax: 0.5, glowColor: "rgba(180,137,58," },
+  day: { teal: "#1d8c80", gold: "#b8893a", azure: "#3f6fc4", ink: "#3a2e22", mote: "rgba(252,238,200,", glowMax: 0.95, glowColor: "rgba(245,205,120," },
   night: { teal: "#2fd6c6", gold: "#e8b84a", azure: "#5a93f0", ink: "#0d0b16", mote: "rgba(120,200,190,", glowMax: 1.0, glowColor: "rgba(47,214,198," },
 };
 

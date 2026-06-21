@@ -1,6 +1,7 @@
 export {}; // module scope
 
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 // Pure-logic core (DOM-free, unit-tested) extracted under src/atelier/*.
@@ -25,8 +26,8 @@ import { glowOpacity } from "./atelier/draw/glow";
 // the real Attune/day-night toggles) live elsewhere. Audio is the prototype's
 // synthetic "bands" for now; Phase 6 will push real WASAPI bands from Rust.
 
-// Default mode. Phase 7 settings will make this user-configurable + Rust-driven.
-const MODE: Mode = "night";
+// Current mode; initialized from persisted settings, updated live via set_mode.
+let curMode: Mode = "night";
 
 const root = document.getElementById("root")!;
 const wall = document.getElementById("wall") as HTMLImageElement;
@@ -64,18 +65,23 @@ wall.onerror = () => {
 };
 wall.src = chosen ? chosen.src : BASE_ART;
 
-let pal = PAL[MODE];
+let pal = PAL[curMode];
 let uiScale = 1;
 let motes: Mote[] = [];
 
 function applyMode(mode: Mode) {
+  curMode = mode;
   const vars = getVarsForMode(mode);
   for (const k of Object.keys(vars)) root.style.setProperty(k, vars[k]);
   wall.style.filter = getWallFilterForMode(mode);
   tint.style.background = getTintBackgroundForMode(mode);
   tint.style.opacity = getTintOpacityForMode(mode);
   pal = PAL[mode];
-  glow.style.background = `radial-gradient(circle, ${pal.glowColor}.5), ${pal.glowColor}0) 62%)`;
+  const glowCenter = mode === "night" ? ".5" : ".7"; // day glow needs a stronger centre to read
+  glow.style.background = `radial-gradient(circle, ${pal.glowColor}${glowCenter}), ${pal.glowColor}0) 62%)`;
+  // `screen` makes the teal bloom glow on the dark night scene, but it can't
+  // brighten the bright day art (invisible) — use normal alpha compositing in day.
+  glow.style.mixBlendMode = mode === "night" ? "screen" : "normal";
   updateDockDisplay(mode);
 }
 
@@ -267,7 +273,7 @@ function startBloom(m: CastFire) {
 
 listen<CastFire>("cast:fire", (e) => {
   const m = e.payload;
-  updateDockDisplay(MODE, m.ink); // reflect spent ink in the dock gauge
+  updateDockDisplay(curMode, m.ink); // reflect spent ink in the dock gauge
   startBloom(m);
 });
 
@@ -321,7 +327,10 @@ function setUiScale() {
 }
 
 setUiScale();
-applyMode(MODE);
+applyMode(curMode); // night by default (matches the inline CSS — no flash)
+// Pull the persisted mode (transitions to day if set) + follow live changes.
+invoke<{ mode: Mode }>("get_settings").then((s) => { if (s && s.mode) applyMode(s.mode); }).catch(() => {});
+listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 sizeAll();
 window.addEventListener("resize", () => {
   setUiScale();
