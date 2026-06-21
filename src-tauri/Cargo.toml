@@ -22,6 +22,10 @@ serde = { version = "1", features = ["derive"] }
 # enables this; we also pass it to `cargo build` for production-mode test runs.
 custom-protocol = ["tauri/custom-protocol"]
 
+[dev-dependencies]
+# For the recognizer golden-corpus parity test (tests/recognizer_parity.rs).
+serde_json = "1"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_Foundation",

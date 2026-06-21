@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "lint:noinput": "node scripts/check-no-input.mjs",
+    "dump-corpus": "node scripts/recognizer-oracle.mjs",
     "test": "vitest",
     "test:run": "vitest run"
   },

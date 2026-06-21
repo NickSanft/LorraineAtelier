@@ -3,6 +3,10 @@ mod host;
 #[cfg(windows)]
 mod workerw;
 
+/// Pure stroke recognizer (no platform deps) — public so the golden-corpus parity
+/// integration test can exercise it. See `tests/recognizer_parity.rs`.
+pub mod recognizer;
+
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
