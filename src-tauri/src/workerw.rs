@@ -16,10 +16,14 @@
 
 #![cfg(windows)]
 
-use windows::core::{w, BOOL, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, TRUE, WPARAM};
+use windows::core::{w, BOOL, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT, RECT, FALSE, TRUE, WPARAM};
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 use windows::Win32::Graphics::Gdi::{
-    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, HDC, HMONITOR,
+    MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
 
 /// MONITORINFOF_PRIMARY — the `dwFlags` bit marking the primary monitor. Not
@@ -345,5 +349,101 @@ pub fn cover_virtual_screen(hwnd: HWND) {
         let cx = GetSystemMetrics(SM_CXVIRTUALSCREEN);
         let cy = GetSystemMetrics(SM_CYVIRTUALSCREEN);
         let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), x, y, cx, cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+}
+
+struct ActivateState {
+    targets: Vec<String>,
+    found: bool,
+}
+
+unsafe extern "system" fn activate_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let st = &mut *(lparam.0 as *mut ActivateState);
+    if !IsWindowVisible(hwnd).as_bool() {
+        return TRUE;
+    }
+    if GetWindowTextLengthW(hwnd) == 0 {
+        return TRUE; // no title → tool window / shell surface, skip
+    }
+    // Never foreground the desktop or taskbar (also explorer.exe-owned).
+    let mut cls = [0u16; 64];
+    let n = GetClassNameW(hwnd, &mut cls);
+    let class = String::from_utf16_lossy(&cls[..n.max(0) as usize]);
+    if matches!(
+        class.as_str(),
+        "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd" | "Windows.UI.Core.CoreWindow"
+    ) {
+        return TRUE;
+    }
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == 0 {
+        return TRUE;
+    }
+    if let Ok(hp) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+        let mut buf = [0u16; 260];
+        let mut sz = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(hp, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut sz).is_ok();
+        let _ = CloseHandle(hp);
+        if ok {
+            let full = String::from_utf16_lossy(&buf[..sz as usize]);
+            let base = full.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase();
+            if st.targets.iter().any(|t| *t == base) {
+                if IsIconic(hwnd).as_bool() {
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                } else {
+                    let _ = ShowWindow(hwnd, SW_SHOW);
+                }
+                let _ = SetForegroundWindow(hwnd);
+                st.found = true;
+                return FALSE; // stop enumeration
+            }
+        }
+    }
+    TRUE
+}
+
+/// Find a visible, titled top-level window belonging to any of `exe_names`
+/// (basename, case-insensitive), restore it if minimized, and bring it to the
+/// foreground. Returns true if one was activated. Shell surfaces (desktop/taskbar)
+/// are excluded so an explorer.exe match never foregrounds the desktop. Used to
+/// "focus the running app" before falling back to launching a new instance.
+pub fn activate_window_for(exe_names: &[&str]) -> bool {
+    let mut st = ActivateState {
+        targets: exe_names.iter().map(|s| s.to_lowercase()).collect(),
+        found: false,
+    };
+    unsafe {
+        let _ = EnumWindows(Some(activate_proc), LPARAM(&mut st as *mut _ as isize));
+    }
+    st.found
+}
+
+/// Place a top-level window so it covers the monitor under the cursor (so the
+/// casting slate appears where the user is, not centred across a monitor seam).
+/// Falls back to the whole virtual desktop if the monitor can't be resolved.
+pub fn cover_active_monitor(hwnd: HWND) {
+    unsafe {
+        let mut pt = POINT::default();
+        let _ = GetCursorPos(&mut pt);
+        let hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(hmon, &mut mi).as_bool() {
+            let r = mi.rcMonitor;
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                r.left,
+                r.top,
+                r.right - r.left,
+                r.bottom - r.top,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        } else {
+            cover_virtual_screen(hwnd);
+        }
     }
 }

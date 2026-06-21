@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 // Pure-logic core (DOM-free, unit-tested) extracted under src/atelier/*.
-import type { Mode } from "./atelier/palette";
+import type { Mode, Sigil } from "./atelier/palette";
 import {
   PAL,
   SIGILS,
@@ -15,7 +15,7 @@ import {
 } from "./atelier/palette";
 import { bands } from "./atelier/audio/generative";
 import { makeMotes, drawAmbient, type Mote } from "./atelier/draw/ambient";
-import { drawViz, attuned } from "./atelier/draw/viz";
+import { drawViz, attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { glowOpacity } from "./atelier/draw/glow";
 
 // Wallpaper renderer — ported faithfully from mockup/Atelier.dc.html (the spec).
@@ -32,6 +32,7 @@ const tint = document.getElementById("tint")!;
 const glow = document.getElementById("glow")!;
 const ambient = document.getElementById("ambient") as HTMLCanvasElement;
 const viz = document.getElementById("viz") as HTMLCanvasElement;
+const bloom = document.getElementById("bloom") as HTMLCanvasElement;
 const elWeekday = document.getElementById("weekday")!;
 const elTime = document.getElementById("time")!;
 const elAmpm = document.getElementById("ampm")!;
@@ -92,6 +93,7 @@ function sizeCanvas(c: CV) {
 function sizeAll() {
   sizeCanvas(ambient);
   sizeCanvas(viz);
+  sizeCanvas(bloom);
   const c = ambient as CV;
   const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
   motes = makeMotes(w, h, 56);
@@ -201,6 +203,69 @@ listen<BuddyMsg>("buddy", (e) => {
     `translate(${m.x - 24 - insetLeftCss}px, ${m.y - 21 - insetTopCss}px) scale(${m.flip * uiScale}, ${uiScale})`;
   if (buddyEyes) buddyEyes.style.transform = `scaleY(${m.eye.toFixed(3)})`;
 }, { target: selfLabel });
+
+// ---- cast bloom: origami unfold driven by Rust `cast:fire` (broadcast to every
+// monitor; all wallpaper windows bloom at their own centre). Reuses the shared
+// drawGlyphPath so a cast and the visualizer seal speak the same glyph vocabulary.
+interface CastFire { sigil: string; score: number; inverse: boolean; sideways: boolean; jutDir: number; hue: string; key: string; ink: number; }
+let bloomRaf = 0;
+function startBloom(m: CastFire) {
+  const c = bloom as CV;
+  const ctx = c.getContext("2d")!;
+  const w = c._cssw || 0, h = c._cssh || 0;
+  if (!w || !h) return;
+  const cx = w / 2, cy = h / 2;
+  const S = Math.max(1.4, uiScale * 1.7); // bloom scales up on bigger monitors
+  const { score, inverse, sideways } = m;
+  const jutDir = m.jutDir || 1;
+  const sig = m.sigil as Sigil;
+  const teal = pal.teal, gold = pal.gold;
+  const start = performance.now();
+  const dur = score >= 70 ? 1300 : score >= 42 ? 1500 : 1700;
+  const sloppy = score < 42;
+  cancelAnimationFrame(bloomRaf);
+  const anim = (now: number) => {
+    const p = Math.min(1, (now - start) / dur);
+    ctx.clearRect(0, 0, w, h);
+    const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    const jx = sideways ? jutDir * Math.sin(p * Math.PI) * 180 * S : 0;
+    const jy = sideways ? Math.sin(p * 9) * (1 - p) * 16 : 0;
+    ctx.save();
+    ctx.translate(cx + jx, cy + jy);
+    ctx.rotate((inverse ? -1 : 1) * ease * 1.3 + (sideways ? Math.sin(p * 8) * 0.12 * (1 - p) : 0));
+    for (let k = 0; k < 3; k++) {
+      const rr = (40 + k * 46) * ease * S * (sloppy ? 1 + 0.12 * Math.sin(now * 0.05 + k) : 1);
+      ctx.beginPath(); ctx.strokeStyle = inverse ? gold : teal; ctx.globalAlpha = (1 - p) * 0.85;
+      ctx.lineWidth = 2.4 * S; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 18 * (1 - p);
+      ctx.arc(0, 0, rr, 0, 6.2832); ctx.stroke();
+    }
+    const ns = 10;
+    for (let i = 0; i < ns; i++) {
+      const a = (i / ns) * 6.2832, len = 110 * ease * S;
+      ctx.beginPath(); ctx.strokeStyle = gold; ctx.globalAlpha = (1 - p) * 0.75; ctx.lineWidth = 1.4 * S;
+      ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len); ctx.stroke();
+    }
+    const gs = (18 + ease * 42) * S;
+    ctx.globalAlpha = Math.max(0, 1 - p * 1.05); ctx.strokeStyle = inverse ? gold : teal;
+    ctx.lineWidth = 3 * S; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 24 * (1 - p);
+    drawGlyphPath(ctx, sig, gs); ctx.stroke();
+    const R = 220 * S;
+    const fl = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    fl.addColorStop(0, (inverse ? "rgba(232,184,74," : "rgba(47,214,198,") + (0.42 * (1 - p)).toFixed(3) + ")");
+    fl.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 1; ctx.fillStyle = fl; ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.2832); ctx.fill();
+    ctx.restore(); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    if (p < 1) bloomRaf = requestAnimationFrame(anim);
+    else ctx.clearRect(0, 0, w, h);
+  };
+  bloomRaf = requestAnimationFrame(anim);
+}
+
+listen<CastFire>("cast:fire", (e) => {
+  const m = e.payload;
+  updateDockDisplay(MODE, m.ink); // reflect spent ink in the dock gauge
+  startBloom(m);
+});
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

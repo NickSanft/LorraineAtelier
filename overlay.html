@@ -4,24 +4,89 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inscribe</title>
+    <link rel="stylesheet" href="/fonts/atelier-fonts.css" />
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
-      #scrim {
-        position: fixed; inset: 0; background: rgba(8,6,14,.55);
-        backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; height: 100%; overflow: hidden; background: transparent;
+        font-family: "EB Garamond", serif; -webkit-font-smoothing: antialiased;
+        /* NIGHT palette (the overlay is always the dark casting slate). */
+        --c-text: #efe6d2; --c-soft: rgba(239,230,210,.66); --c-faint: rgba(239,230,210,.4);
+        --c-panel: rgba(22,20,36,.6); --c-edge: rgba(232,184,74,.42);
+        --c-gold: #e8b84a; --c-teal: #2fd6c6; --c-halo: rgba(11,9,20,.62);
+        color: var(--c-text);
       }
-      canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
-      #label {
-        position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
-        font-family: "Cinzel", "Segoe UI", serif; letter-spacing: .3em; text-transform: uppercase;
-        font-size: 13px; color: #e8b84a; opacity: .9; pointer-events: none; text-shadow: 0 0 12px rgba(232,184,74,.5);
+      #scrim { position: fixed; inset: 0; background: rgba(8,6,14,.5); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+      #slate {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        display: flex; flex-direction: column; align-items: center; gap: 14px;
+        animation: slate-in .5s cubic-bezier(.2,.9,.3,1) both;
       }
+      @keyframes slate-in { from { opacity: 0; transform: translate(-50%,-46%) scale(.97); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+      #phaseLabel { font-family: "Cinzel", serif; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: var(--c-gold); text-shadow: 0 0 14px rgba(232,184,74,.45); }
+      #cast { width: min(58vmin, 520px); height: min(58vmin, 520px); display: block; cursor: crosshair; touch-action: none; }
+      #hud {
+        display: flex; align-items: center; gap: 18px; padding: 12px 18px; border-radius: 14px;
+        border: 1px solid var(--c-edge); background: var(--c-panel); backdrop-filter: blur(8px);
+        box-shadow: 0 10px 34px rgba(8,6,14,.4); min-width: min(58vmin, 520px);
+      }
+      .reading { display: flex; align-items: center; gap: 12px; flex: 1; }
+      #hudGlyph { font-size: 30px; line-height: 1; width: 34px; text-align: center; color: var(--c-soft); transition: color .2s ease; }
+      .reading .meta { display: flex; flex-direction: column; gap: 2px; }
+      #hudName { font-family: "Cinzel", serif; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--c-text); }
+      #hudApp { font-size: 12px; color: var(--c-soft); }
+      .neat { display: flex; flex-direction: column; gap: 5px; width: 120px; }
+      .neat .lab { font-family: "Cinzel", serif; font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--c-faint); display: flex; justify-content: space-between; }
+      .neat .track { height: 6px; border-radius: 999px; background: rgba(239,230,210,.12); overflow: hidden; }
+      #neatBar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--c-teal), var(--c-gold)); transition: width .25s ease; }
+      .legend { display: flex; gap: 10px; }
+      .legend .s { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--c-soft); }
+      .legend .g { font-size: 17px; line-height: 1; }
+      .legend .n { font-family: "Cinzel", serif; font-size: 7.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--c-faint); }
+      .btns { display: flex; gap: 10px; }
+      .btn {
+        padding: 9px 18px; border-radius: 8px; border: 1px solid rgba(239,230,210,.3); background: transparent;
+        color: var(--c-text); cursor: pointer; font-family: "Cinzel", serif; font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase;
+      }
+      .btn:hover { border-color: var(--c-gold); background: rgba(232,184,74,.08); }
+      #toast {
+        position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); display: none; align-items: center; gap: 10px;
+        padding: 11px 20px; border-radius: 999px; border: 1px solid var(--c-edge); background: rgba(22,20,36,.82);
+        backdrop-filter: blur(8px); font-size: 14px; color: var(--c-text); box-shadow: 0 8px 28px rgba(8,6,14,.45); pointer-events: none;
+      }
+      #toast .ic { color: var(--c-gold); font-size: 15px; }
     </style>
   </head>
   <body>
     <div id="scrim"></div>
-    <canvas id="c"></canvas>
-    <div id="label">Inscribe the sigil — Esc to dismiss</div>
+    <div id="slate">
+      <div id="phaseLabel">Draw the central sigil</div>
+      <canvas id="cast"></canvas>
+      <div id="hud">
+        <div class="reading">
+          <div id="hudGlyph">·</div>
+          <div class="meta">
+            <div id="hudName">Awaiting sigil</div>
+            <div id="hudApp">—</div>
+          </div>
+        </div>
+        <div class="neat">
+          <div class="lab"><span>Neatness</span><span id="neatPct">—</span></div>
+          <div class="track"><div id="neatBar"></div></div>
+        </div>
+        <div class="legend">
+          <div class="s"><span class="g" style="color:#e8954a">△</span><span class="n">Fire</span></div>
+          <div class="s"><span class="g" style="color:#5a93f0">▽</span><span class="n">Water</span></div>
+          <div class="s"><span class="g" style="color:#2fd6c6">○</span><span class="n">Wind</span></div>
+          <div class="s"><span class="g" style="color:#c79a4c">□</span><span class="n">Earth</span></div>
+        </div>
+        <div class="btns">
+          <button class="btn" id="btnClear">Clear</button>
+          <button class="btn" id="btnDismiss">Dismiss</button>
+        </div>
+      </div>
+    </div>
+    <div id="toast"><span class="ic" id="toastIcon">✦</span><span id="toastMsg"></span></div>
     <script type="module" src="/src/overlay.ts"></script>
   </body>
 </html>

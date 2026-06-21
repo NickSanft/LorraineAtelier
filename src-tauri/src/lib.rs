@@ -7,6 +7,11 @@ mod workerw;
 /// integration test can exercise it. See `tests/recognizer_parity.rs`.
 pub mod recognizer;
 
+/// Casting IPC (recognition wrappers + the atomic `fire_spell`) and the launch
+/// targets it resolves. Platform-agnostic; the launch impl is Windows-gated.
+mod casting;
+mod launcher;
+
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
@@ -37,7 +42,7 @@ fn overlay_toggle(app: &AppHandle) {
     } else {
         #[cfg(windows)]
         if let Ok(h) = w.hwnd() {
-            workerw::cover_virtual_screen(h);
+            workerw::cover_active_monitor(h);
         }
         let _ = w.set_ignore_cursor_events(false);
         let _ = w.show();
@@ -730,7 +735,10 @@ pub fn run() {
             detach_wallpaper,
             toggle_overlay,
             get_status,
-            set_pause_on_fullscreen
+            set_pause_on_fullscreen,
+            casting::classify_sigil,
+            casting::analyze_ring,
+            casting::fire_spell
         ])
         .on_window_event(|window, event| {
             // Closing the control window hides it to the tray; the wallpaper and
