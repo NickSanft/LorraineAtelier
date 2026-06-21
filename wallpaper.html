@@ -76,7 +76,7 @@
         </svg>
         <canvas id="viz" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
         <div style="position:absolute;left:0;right:0;bottom:-34px;display:flex;align-items:center;justify-content:center;gap:12px;pointer-events:none">
-          <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--c-edge);background:var(--c-panel);backdrop-filter:blur(7px);border-radius:999px;padding:7px 16px 7px 11px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--c-text)">
+          <div id="attunePill" style="display:flex;align-items:center;gap:9px;border:1px solid var(--c-edge);background:var(--c-panel);backdrop-filter:blur(7px);border-radius:999px;padding:7px 16px 7px 11px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--c-text)">
             <span id="attuneIcon" style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;color:var(--c-gold);font-size:11px">▶</span>
             <span id="attuneLabel">Attune</span>
           </div>
@@ -112,27 +112,27 @@
           <div style="width:1px;align-self:stretch;background:var(--c-edge);opacity:.6"></div>
           <!-- spell vials (Fire △, Water ▽, Wind ○, Earth □) -->
           <div style="display:flex;gap:4px">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
+            <div data-pill="fire" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
               <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#e8954a;text-shadow:0 0 12px rgba(232,149,74,.6)">△</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Steam</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
+            <div data-pill="water" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
               <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#5a93f0;text-shadow:0 0 12px rgba(90,147,240,.6)">▽</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Discord</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
+            <div data-pill="wind" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
               <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#2fd6c6;text-shadow:0 0 12px rgba(47,214,198,.6)">○</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Browser</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
+            <div data-pill="earth" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
               <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#c79a4c;text-shadow:0 0 12px rgba(199,154,76,.55)">□</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Files</span>
             </div>
           </div>
         </div>
 
-        <!-- Inscribe button (central; display only) -->
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0 24px;border-radius:16px;border:1px solid var(--c-gold);background:linear-gradient(180deg, rgba(156,111,42,.22), rgba(156,111,42,.08)), var(--c-panel);backdrop-filter:blur(9px);color:var(--c-text);box-shadow:0 10px 34px rgba(8,6,14,.32)">
+        <!-- Inscribe button (central; the desktop cast-glyph hit-rect) -->
+        <div id="castGlyph" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0 24px;border-radius:16px;border:1px solid var(--c-gold);background:linear-gradient(180deg, rgba(156,111,42,.22), rgba(156,111,42,.08)), var(--c-panel);backdrop-filter:blur(9px);color:var(--c-text);box-shadow:0 10px 34px rgba(8,6,14,.32)">
           <span style="font-size:calc(23px * var(--ui-scale,1));color:var(--c-gold);line-height:1">⚝</span>
           <span style="font-family:'Cinzel',serif;font-size:calc(10px * var(--ui-scale,1));letter-spacing:.22em;text-transform:uppercase;font-weight:600">Inscribe</span>
         </div>

@@ -2,6 +2,10 @@
 mod host;
 #[cfg(windows)]
 mod workerw;
+/// Desktop-layer interactivity (global low-level mouse hook): clickable pills/cast
+/// + draggable buddy, gated so app windows always keep priority.
+#[cfg(windows)]
+mod hook;
 
 /// Pure stroke recognizer (no platform deps) — public so the golden-corpus parity
 /// integration test can exercise it. See `tests/recognizer_parity.rs`.
@@ -38,24 +42,78 @@ fn log(app: &AppHandle, msg: impl Into<String>) {
 // Overlay (casting surface)
 // ---------------------------------------------------------------------------
 
+/// The overlay is ALWAYS shown (a top-most, click-through interactive layer).
+/// The casting overlay is hidden at rest and shown only here, as a focusable modal.
+/// "Toggling" opens (show + focus the active monitor) or closes (hide + return the
+/// user's prior foreground) the slate.
 fn overlay_toggle(app: &AppHandle) {
-    let Some(w) = app.get_webview_window("overlay") else {
-        return;
-    };
-    let visible = w.is_visible().unwrap_or(false);
-    if visible {
-        let _ = w.hide();
-        log(app, "overlay: hidden");
-    } else {
-        #[cfg(windows)]
-        if let Ok(h) = w.hwnd() {
-            workerw::cover_active_monitor(h);
+    #[cfg(windows)]
+    {
+        if workerw::overlay_casting() {
+            close_casting_impl(app);
+        } else {
+            open_casting_impl(app);
         }
-        let _ = w.set_ignore_cursor_events(false);
-        let _ = w.show();
-        let _ = w.set_focus();
-        log(app, "overlay: shown");
     }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+    }
+}
+
+#[cfg(windows)]
+fn open_casting_impl(app: &AppHandle) {
+    // Remember the user's current window BEFORE we take focus, so we can give it
+    // back when casting ends.
+    workerw::snapshot_foreground();
+    workerw::set_overlay_casting(true);
+    if let Some(w) = app.get_webview_window("overlay") {
+        if let Ok(h) = w.hwnd() {
+            workerw::cover_active_monitor(h); // size to the monitor under the cursor
+        }
+        let _ = w.show();
+        let _ = w.set_focus(); // normal modal activation (mouse + Escape reach the slate)
+    }
+    let _ = app.emit("overlay:mode", "casting");
+}
+
+/// Open casting from a desktop cast-glyph click (no-op if already casting).
+#[cfg(windows)]
+pub(crate) fn hook_cast(app: &AppHandle) {
+    if !workerw::overlay_casting() {
+        open_casting_impl(app);
+    }
+}
+
+/// Toggle day/night from the dock's mode indicator (emits settings:mode, so the
+/// wallpaper transitions and the control panel/tray stay in sync).
+#[cfg(windows)]
+pub(crate) fn hook_toggle_mode(app: &AppHandle) {
+    let next = if settings::get().mode == "day" { "night" } else { "day" };
+    settings::set_mode(app, next.to_string());
+}
+
+/// Toggle "Attune to music" from the seal's pill (mirrors the tray arm; audio
+/// start/stop emits viz:source-changed, updating the pill and control panel).
+#[cfg(windows)]
+pub(crate) fn hook_toggle_attune(app: &AppHandle) {
+    if audio::is_capturing() {
+        audio::stop();
+    } else {
+        audio::start(app.clone());
+    }
+}
+
+#[cfg(windows)]
+fn close_casting_impl(app: &AppHandle) {
+    // Hiding the window is what truly releases the foreground — a hidden window can
+    // never hold it. restore_foreground then returns the user to their prior app.
+    if let Some(w) = app.get_webview_window("overlay") {
+        let _ = w.hide();
+    }
+    workerw::restore_foreground();
+    workerw::set_overlay_casting(false);
+    let _ = app.emit("overlay:mode", "idle");
 }
 
 // ---------------------------------------------------------------------------
@@ -385,16 +443,9 @@ fn spawn_watchdog(app: AppHandle) {
 /// `gift:birthday` so it swaps to the storybook view, and `gift:bloom` for a
 /// celebratory wallpaper bloom on every monitor.
 fn surface_storybook(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("overlay") {
-        #[cfg(windows)]
-        if let Ok(h) = w.hwnd() {
-            workerw::cover_active_monitor(h);
-        }
-        let _ = w.set_ignore_cursor_events(false);
-        let _ = w.show();
-        let _ = w.set_focus();
-    }
-    let _ = app.emit("gift:birthday", ());
+    #[cfg(windows)]
+    open_casting_impl(app); // make the overlay interactive on the active monitor
+    let _ = app.emit("gift:birthday", ()); // overlay swaps to the storybook view
     let _ = app.emit("gift:bloom", ());
 }
 
@@ -465,6 +516,7 @@ struct BuddyMsg {
     flip: f64,
     eye: f64,
     primary: bool,
+    held: bool, // currently being dragged → frontend shows a "picked up" effect
     // Taskbar/appbar safe-area insets for this monitor, in physical px. The
     // frontend insets the whole scene into the work area so the dock/widgets/art
     // sit above a space-reserving taskbar (0 when it auto-hides).
@@ -517,6 +569,88 @@ fn owner_index(mons: &[workerw::Monitor], x: f64) -> usize {
     best
 }
 
+/// Shared brushbuddy state so the mouse hook can drag it while `spawn_buddy` owns
+/// the wander. All in virtual-desktop physical px. `spawn_buddy` writes X/Y while
+/// roaming and reads them while DRAGGING; the hook writes them during a drag.
+#[cfg(windows)]
+mod buddy {
+    use std::sync::atomic::{AtomicBool, AtomicI64};
+    pub static X: AtomicI64 = AtomicI64::new(0); // center
+    pub static Y: AtomicI64 = AtomicI64::new(0);
+    pub static HW: AtomicI64 = AtomicI64::new(24); // half-width (scaled sprite)
+    pub static HH: AtomicI64 = AtomicI64::new(21); // half-height
+    pub static VISIBLE: AtomicBool = AtomicBool::new(false);
+    pub static DRAGGING: AtomicBool = AtomicBool::new(false);
+    pub static GRAB_DX: AtomicI64 = AtomicI64::new(0); // cursor−center at grab
+    pub static GRAB_DY: AtomicI64 = AtomicI64::new(0);
+    // Virtual-screen union bounds, cached at grab, to clamp the drop point.
+    pub static VX0: AtomicI64 = AtomicI64::new(-100_000);
+    pub static VY0: AtomicI64 = AtomicI64::new(-100_000);
+    pub static VX1: AtomicI64 = AtomicI64::new(100_000);
+    pub static VY1: AtomicI64 = AtomicI64::new(100_000);
+}
+
+/// Is this screen point on the buddy sprite? (hot-path cheap: atomics only)
+#[cfg(windows)]
+pub(crate) fn buddy_hit_test(mx: i32, my: i32) -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !buddy::VISIBLE.load(Relaxed) {
+        return false;
+    }
+    let (x, y) = (buddy::X.load(Relaxed), buddy::Y.load(Relaxed));
+    let (hw, hh) = (buddy::HW.load(Relaxed), buddy::HH.load(Relaxed));
+    let (mx, my) = (mx as i64, my as i64);
+    mx >= x - hw && mx <= x + hw && my >= y - hh && my <= y + hh
+}
+
+/// Begin a drag: record the grab offset and cache clamp bounds.
+#[cfg(windows)]
+pub(crate) fn buddy_begin_drag(mx: i32, my: i32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    buddy::GRAB_DX.store(mx as i64 - buddy::X.load(Relaxed), Relaxed);
+    buddy::GRAB_DY.store(my as i64 - buddy::Y.load(Relaxed), Relaxed);
+    let mons = monitors_store().lock().unwrap();
+    if !mons.is_empty() {
+        buddy::VX0.store(mons.iter().map(|m| m.x).min().unwrap() as i64, Relaxed);
+        buddy::VY0.store(mons.iter().map(|m| m.y).min().unwrap() as i64, Relaxed);
+        buddy::VX1.store(mons.iter().map(|m| m.x + m.width).max().unwrap() as i64, Relaxed);
+        buddy::VY1.store(mons.iter().map(|m| m.y + m.height).max().unwrap() as i64, Relaxed);
+    }
+    buddy::DRAGGING.store(true, Relaxed);
+}
+
+/// Move the buddy to follow the cursor (preserving the grab offset), clamped to the
+/// virtual screen so it can never be lost off-edge.
+#[cfg(windows)]
+pub(crate) fn buddy_drag_to(mx: i32, my: i32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let (hw, hh) = (buddy::HW.load(Relaxed), buddy::HH.load(Relaxed));
+    let x = (mx as i64 - buddy::GRAB_DX.load(Relaxed))
+        .clamp(buddy::VX0.load(Relaxed) + hw, buddy::VX1.load(Relaxed) - hw);
+    let y = (my as i64 - buddy::GRAB_DY.load(Relaxed))
+        .clamp(buddy::VY0.load(Relaxed) + hh, buddy::VY1.load(Relaxed) - hh);
+    buddy::X.store(x, Relaxed);
+    buddy::Y.store(y, Relaxed);
+}
+
+#[cfg(windows)]
+pub(crate) fn buddy_dragging() -> bool {
+    buddy::DRAGGING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(windows)]
+pub(crate) fn buddy_release() {
+    buddy::DRAGGING.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Persist the dropped position (does file I/O — call from the consumer, NOT the
+/// hook proc).
+#[cfg(windows)]
+pub(crate) fn buddy_persist() {
+    use std::sync::atomic::Ordering::Relaxed;
+    settings::set_buddy_pos(buddy::X.load(Relaxed) as f64, buddy::Y.load(Relaxed) as f64);
+}
+
 #[cfg(windows)]
 fn spawn_buddy(app: AppHandle) {
     std::thread::spawn(move || {
@@ -524,7 +658,8 @@ fn spawn_buddy(app: AppHandle) {
         const GROUND: f64 = 112.0; // px above a monitor's bottom the buddy walks
         const SPEED: f64 = 3.4; // px/tick while walking
         const ARRIVE: f64 = 6.0; // distance to target that counts as "arrived"
-        const Y_LERP: f64 = 0.11; // vertical ease toward owner ground (seam rise)
+        const Y_LERP: f64 = 0.11; // vertical ease toward the walk line (seam rise)
+        const MIN_ABOVE: f64 = 30.0; // keep the buddy at least this far above the bottom
         const TWO_PI: f64 = std::f64::consts::PI * 2.0;
 
         let seed = std::time::SystemTime::now()
@@ -545,6 +680,13 @@ fn spawn_buddy(app: AppHandle) {
         let mut blink = 0i32;
         let mut bob = 0.0f64;
         let mut started = false;
+        let mut drag_ticks = 0i32; // backstop against a stuck drag (missed button-up)
+        // The line the buddy walks along, as distance ABOVE the work-area bottom.
+        // Default = the floor; a drop sets it to the dropped height so the buddy
+        // stays where you put it (and keeps that height across monitor seams).
+        let mut walk_above = GROUND;
+        let mut was_dragging = false;
+        use std::sync::atomic::Ordering::Relaxed;
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
@@ -557,56 +699,117 @@ fn spawn_buddy(app: AppHandle) {
             }
 
             if !started {
-                let p = mons.iter().find(|m| m.primary).unwrap_or(&mons[0]);
-                x = p.x as f64 + p.width as f64 * 0.5;
-                y = (p.y + p.height) as f64 - GROUND;
+                // Restore the dropped position if the buddy was ever placed; else
+                // start at the primary monitor's centre.
+                let s = settings::get();
+                if s.buddy_placed {
+                    x = s.buddy_x;
+                    y = s.buddy_y;
+                } else {
+                    let p = mons.iter().find(|m| m.primary).unwrap_or(&mons[0]);
+                    x = p.x as f64 + p.width as f64 * 0.5;
+                    y = (p.y + p.height) as f64 - GROUND;
+                }
                 tx = x;
                 rest = 40;
                 started = true;
+                // Adopt the seeded height as the walk line (so a restored placement
+                // keeps its height instead of snapping to the floor).
+                let om = mons[owner_index(&mons, x)];
+                walk_above = ((om.work_y + om.work_h) as f64 - y)
+                    .clamp(MIN_ABOVE, om.work_h as f64 - MIN_ABOVE);
+                buddy::X.store(x.round() as i64, Relaxed);
+                buddy::Y.store(y.round() as i64, Relaxed);
             }
 
-            let owner = owner_index(&mons, x);
-            let om = mons[owner];
-            // Walk along the work-area bottom so the buddy stays above a pinned
-            // taskbar (work area == full monitor when the taskbar auto-hides).
-            let ground = (om.work_y + om.work_h) as f64 - GROUND;
-
-            if rest > 0 {
-                rest -= 1;
-                if rest == 0 {
-                    napping = false;
+            let dragging = buddy::DRAGGING.load(Relaxed);
+            // Backstop: if a "drag" somehow runs far longer than any real one (a
+            // button-up the hook never saw), force-release so it can't get stuck to
+            // the cursor and swallow mouse-moves. ~15 s at 30 Hz.
+            if dragging {
+                drag_ticks += 1;
+                if drag_ticks > 450 {
+                    buddy::DRAGGING.store(false, Relaxed);
+                    settings::set_buddy_pos(x, y);
+                    drag_ticks = 0;
                 }
             } else {
-                let dx = tx - x;
-                if dx.abs() <= ARRIVE {
-                    // Arrived: rest (sometimes a longer nap), then pick a new target.
-                    if rng.unit() < 0.26 {
-                        napping = true;
-                        rest = rng.range(90.0, 220.0) as i32; // ~3–7 s nap
-                    } else {
-                        rest = rng.range(18.0, 70.0) as i32; // brief pause
+                drag_ticks = 0;
+            }
+            let dragging = buddy::DRAGGING.load(Relaxed);
+            // On release, adopt the dropped height as the new walk line so the buddy
+            // stays where you put it (vertically too) rather than gliding to the floor.
+            if was_dragging && !dragging {
+                x = buddy::X.load(Relaxed) as f64;
+                y = buddy::Y.load(Relaxed) as f64;
+                let om = mons[owner_index(&mons, x)];
+                walk_above = ((om.work_y + om.work_h) as f64 - y)
+                    .clamp(MIN_ABOVE, om.work_h as f64 - MIN_ABOVE);
+                tx = x;
+            }
+            was_dragging = dragging;
+
+            if dragging {
+                // The hook owns the position while dragging; follow it, no wander.
+                x = buddy::X.load(Relaxed) as f64;
+                y = buddy::Y.load(Relaxed) as f64;
+                tx = x;
+                napping = false;
+            } else {
+                let owner = owner_index(&mons, x);
+                let om = mons[owner];
+                // Walk along the buddy's current height line (the floor by default,
+                // or wherever it was last dropped), kept above a pinned taskbar.
+                let ground = (om.work_y + om.work_h) as f64 - walk_above;
+
+                if rest > 0 {
+                    rest -= 1;
+                    if rest == 0 {
+                        napping = false;
                     }
-                    // 45% of the time aim for a DIFFERENT monitor → cross the seam.
-                    let tgt = if n > 1 && rng.unit() < 0.45 {
-                        let mut k = (rng.unit() * n as f64) as usize % n;
-                        if k == owner {
-                            k = (owner + 1) % n;
-                        }
-                        mons[k]
-                    } else {
-                        om
-                    };
-                    let margin = (tgt.width as f64 * 0.10).min(120.0);
-                    tx = tgt.x as f64 + rng.range(margin, tgt.width as f64 - margin);
                 } else {
-                    x += SPEED.min(dx.abs()) * dx.signum();
-                    flip = if dx >= 0.0 { 1.0 } else { -1.0 };
-                    bob = (bob + 0.34) % TWO_PI;
+                    let dx = tx - x;
+                    if dx.abs() <= ARRIVE {
+                        // Arrived: rest (sometimes a longer nap), then a new target.
+                        if rng.unit() < 0.26 {
+                            napping = true;
+                            rest = rng.range(90.0, 220.0) as i32; // ~3–7 s nap
+                        } else {
+                            rest = rng.range(18.0, 70.0) as i32; // brief pause
+                        }
+                        // 45% of the time aim for a DIFFERENT monitor → cross the seam.
+                        let tgt = if n > 1 && rng.unit() < 0.45 {
+                            let mut k = (rng.unit() * n as f64) as usize % n;
+                            if k == owner {
+                                k = (owner + 1) % n;
+                            }
+                            mons[k]
+                        } else {
+                            om
+                        };
+                        let margin = (tgt.width as f64 * 0.10).min(120.0);
+                        tx = tgt.x as f64 + rng.range(margin, tgt.width as f64 - margin);
+                    } else {
+                        x += SPEED.min(dx.abs()) * dx.signum();
+                        flip = if dx >= 0.0 { 1.0 } else { -1.0 };
+                        bob = (bob + 0.34) % TWO_PI;
+                    }
                 }
+
+                // Ease y toward the owner monitor's ground (seam rise/dip).
+                y += (ground - y) * Y_LERP;
+                buddy::X.store(x.round() as i64, Relaxed);
+                buddy::Y.store(y.round() as i64, Relaxed);
             }
 
-            // Ease y toward the owner monitor's ground (seam rise/dip).
-            y += (ground - y) * Y_LERP;
+            // Publish the sprite half-size (scaled like the frontend's --ui-scale)
+            // and that the buddy exists, so the hook can hit-test it.
+            let owner = owner_index(&mons, x);
+            let om = mons[owner];
+            let scale = (om.height as f64 / 960.0).clamp(1.0, 2.2);
+            buddy::HW.store((24.0 * scale).round() as i64, Relaxed);
+            buddy::HH.store((21.0 * scale).round() as i64, Relaxed);
+            buddy::VISIBLE.store(true, Relaxed);
 
             // Eyes: closed while napping; otherwise the occasional blink.
             let eye_target = if napping {
@@ -622,7 +825,7 @@ fn spawn_buddy(app: AppHandle) {
             };
             eye += (eye_target - eye) * 0.4;
 
-            let bob_off = if rest == 0 { bob.sin() * 1.6 } else { 0.0 };
+            let bob_off = if dragging || rest != 0 { 0.0 } else { bob.sin() * 1.6 };
 
             let labels = slot_labels().lock().unwrap().clone();
             for i in 0..n {
@@ -636,6 +839,7 @@ fn spawn_buddy(app: AppHandle) {
                     flip,
                     eye,
                     primary: m.primary,
+                    held: dragging,
                     inset_top: (m.work_y - m.y) as f64,
                     inset_bottom: ((m.y + m.height) - (m.work_y + m.work_h)) as f64,
                     inset_left: (m.work_x - m.x) as f64,
@@ -696,6 +900,17 @@ fn toggle_overlay(app: AppHandle) {
     overlay_toggle(&app);
 }
 
+/// Leave casting → idle (the always-shown overlay stays; it just stops being the
+/// full interactive slate). Called by the overlay's Dismiss/Esc/close-book.
+#[tauri::command]
+fn close_casting(app: AppHandle) -> String {
+    #[cfg(windows)]
+    close_casting_impl(&app);
+    #[cfg(not(windows))]
+    let _ = &app;
+    "idle".into()
+}
+
 #[tauri::command]
 fn get_status() -> String {
     #[cfg(windows)]
@@ -747,6 +962,88 @@ fn set_pause_on_fullscreen(_app: AppHandle, enabled: bool) -> String {
     #[cfg(windows)]
     PAUSE_ON_FULLSCREEN.store(enabled, std::sync::atomic::Ordering::Relaxed);
     format!("pause_on_fullscreen={enabled}")
+}
+
+/// A dock/cast hit-rect reported by a wallpaper window, in that window's LOCAL
+/// physical px (origin = its monitor's top-left). Rust offsets it by the monitor's
+/// virtual-desktop origin to get the screen-space rect the mouse hook tests.
+#[derive(Clone, serde::Deserialize)]
+struct LocalRect {
+    kind: String, // "pill" | "cast"
+    #[serde(default)]
+    key: Option<String>, // element key for a pill
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+}
+
+#[cfg(windows)]
+fn hit_rects_map() -> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<LocalRect>>> {
+    static M: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Vec<LocalRect>>>,
+    > = std::sync::OnceLock::new();
+    M.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Rebuild the global (virtual-desktop px) hit-rect list from every wallpaper's
+/// locally-reported rects, offsetting each by its monitor origin.
+#[cfg(windows)]
+fn rebuild_hit_rects() {
+    let labels = slot_labels().lock().unwrap().clone();
+    let monitors = monitors_store().lock().unwrap().clone();
+    let map = hit_rects_map().lock().unwrap();
+    let mut out: Vec<(i32, i32, i32, i32, hook::HitTarget)> = Vec::new();
+    for (label, rects) in map.iter() {
+        let Some(idx) = labels.iter().position(|l| l == label) else {
+            continue;
+        };
+        let Some(m) = monitors.get(idx) else { continue };
+        for r in rects {
+            let target = match r.kind.as_str() {
+                "cast" => hook::HitTarget::Cast,
+                "pill" => hook::HitTarget::Pill(r.key.clone().unwrap_or_default()),
+                "mode" => hook::HitTarget::Mode,
+                "attune" => hook::HitTarget::Attune,
+                _ => continue,
+            };
+            out.push((
+                m.x + r.x0.round() as i32,
+                m.y + r.y0.round() as i32,
+                m.x + r.x1.round() as i32,
+                m.y + r.y1.round() as i32,
+                target,
+            ));
+        }
+    }
+    hook::set_global_rects(out);
+}
+
+/// A wallpaper window reports its current dock/cast hit-rects (local physical px).
+/// Re-sent on layout changes (resize / insets / primary / mode). Empty list clears.
+#[tauri::command]
+fn set_hit_rects(label: String, rects: Vec<LocalRect>) {
+    #[cfg(windows)]
+    {
+        hit_rects_map().lock().unwrap().insert(label, rects);
+        rebuild_hit_rects();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (label, rects);
+    }
+}
+
+/// Toggle desktop-layer interactivity (the global mouse hook). When on, pills/cast
+/// are clickable and the buddy is draggable WHEN the desktop is exposed; app windows
+/// always keep priority. Persisted; installs/removes the hook live.
+#[tauri::command]
+fn set_desktop_interactive(app: AppHandle, enabled: bool) -> String {
+    settings::set_desktop_interactive(enabled);
+    #[cfg(windows)]
+    hook::set_enabled(&app, enabled);
+    let _ = app.emit("settings:interactive", enabled);
+    format!("desktop_interactive={enabled}")
 }
 
 /// The current persisted settings (mode / mappings / pause) for the control UI
@@ -809,10 +1106,13 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let inscribe = MenuItem::with_id(app, "inscribe", "Inscribe (overlay)", true, None::<&str>)?;
     let attune = MenuItem::with_id(app, "attune", "Attune to music (toggle)", true, None::<&str>)?;
     let mode = MenuItem::with_id(app, "mode", "Day / Night (toggle)", true, None::<&str>)?;
+    let interact =
+        MenuItem::with_id(app, "interact", "Desktop interactivity (toggle)", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show control", true, None::<&str>)?;
     let reattach = MenuItem::with_id(app, "reattach", "Re-attach wallpaper", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&inscribe, &attune, &mode, &show, &reattach, &quit])?;
+    let menu =
+        Menu::with_items(app, &[&inscribe, &attune, &mode, &interact, &show, &reattach, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("lorraine-tray")
         .tooltip("Lorraine Atelier")
@@ -835,6 +1135,13 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
             "mode" => {
                 let next = if settings::get().mode == "day" { "night" } else { "day" };
                 settings::set_mode(app, next.to_string());
+            }
+            "interact" => {
+                let next = !settings::get().desktop_interactive;
+                settings::set_desktop_interactive(next);
+                #[cfg(windows)]
+                hook::set_enabled(app, next);
+                let _ = app.emit("settings:interactive", next);
             }
             "show" => {
                 if let Some(w) = app.get_webview_window("main") {
@@ -901,8 +1208,11 @@ pub fn run() {
             reattach_wallpaper,
             detach_wallpaper,
             toggle_overlay,
+            close_casting,
             get_status,
             set_pause_on_fullscreen,
+            set_desktop_interactive,
+            set_hit_rects,
             get_settings,
             set_mode,
             toggle_mode,
@@ -956,6 +1266,9 @@ pub fn run() {
                 spawn_watchdog(_handle.clone());
                 spawn_buddy(_handle.clone());
                 spawn_birthday_watch(_handle.clone());
+                if settings::get().desktop_interactive {
+                    hook::set_enabled(_handle, true);
+                }
                 // Belt-and-suspenders: re-broadcast the persisted mode once windows
                 // exist, in case any wallpaper pulled before settings were loaded.
                 let _ = _handle.emit("settings:mode", settings::get().mode);

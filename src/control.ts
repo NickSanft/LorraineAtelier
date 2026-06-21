@@ -10,6 +10,7 @@ function append(line: string) {
 const modeBtn = document.getElementById("mode") as HTMLButtonElement;
 const attuneBtn = document.getElementById("attune") as HTMLButtonElement;
 const pauseBtn = document.getElementById("pause") as HTMLButtonElement;
+const interactBtn = document.getElementById("interact") as HTMLButtonElement;
 const bindingsEl = document.getElementById("bindings")!;
 
 const ELEMENTS = [
@@ -22,6 +23,7 @@ const ELEMENTS = [
 let mode: "day" | "night" = "night";
 let attuned = false;
 let pauseOn = false;
+let interactOn = false;
 
 function renderMode() {
   modeBtn.textContent = mode === "night" ? "☾ Night" : "☀ Day";
@@ -35,8 +37,12 @@ function renderPause() {
   pauseBtn.textContent = `Pause on fullscreen: ${pauseOn ? "on" : "off"}`;
   pauseBtn.classList.toggle("on", pauseOn);
 }
+function renderInteract() {
+  interactBtn.textContent = `Desktop interactivity: ${interactOn ? "on" : "off"}`;
+  interactBtn.classList.toggle("on", interactOn);
+}
 
-interface SettingsDto { mode: string; pauseOnFullscreen: boolean; mappings: Record<string, string> }
+interface SettingsDto { mode: string; pauseOnFullscreen: boolean; desktopInteractive: boolean; mappings: Record<string, string> }
 
 async function main() {
   let core: typeof import("@tauri-apps/api/core");
@@ -81,12 +87,13 @@ async function main() {
     const s = await invoke<SettingsDto>("get_settings");
     mode = s.mode === "day" ? "day" : "night";
     pauseOn = !!s.pauseOnFullscreen;
+    interactOn = !!s.desktopInteractive;
     buildBindings(s.mappings || {});
   } catch (e) {
     append("get_settings ✗ " + e);
   }
   try { attuned = !!(await invoke<boolean>("viz_status")); } catch { /* */ }
-  renderMode(); renderAttune(); renderPause();
+  renderMode(); renderAttune(); renderPause(); renderInteract();
 
   // Flip via the authoritative Rust toggle; our label updates from the
   // `settings:mode` broadcast below (so it can't desync from the real state).
@@ -100,6 +107,11 @@ async function main() {
     pauseOn = !pauseOn;
     renderPause();
     await invoke("set_pause_on_fullscreen", { enabled: pauseOn });
+  });
+  interactBtn.addEventListener("click", async () => {
+    interactOn = !interactOn;
+    renderInteract();
+    await invoke("set_desktop_interactive", { enabled: interactOn });
   });
 
   document.getElementById("resetBindings")!.addEventListener("click", async () => {
@@ -117,6 +129,7 @@ async function main() {
 
   // Stay in sync when the same state is toggled from the tray.
   await event.listen<string>("settings:mode", (e) => { mode = e.payload === "day" ? "day" : "night"; renderMode(); });
+  await event.listen<boolean>("settings:interactive", (e) => { interactOn = !!e.payload; renderInteract(); });
   await event.listen<{ attuned: boolean }>("viz:source-changed", (e) => { attuned = !!e.payload.attuned; renderAttune(); });
   await event.listen<string>("log", (e) => append(e.payload));
   append("control ready");

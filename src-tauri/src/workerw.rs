@@ -16,6 +16,7 @@
 
 #![cfg(windows)]
 
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use windows::core::{w, BOOL, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT, RECT, FALSE, TRUE, WPARAM};
 use windows::Win32::System::Threading::{
@@ -340,6 +341,34 @@ pub fn monitor_covered(mon: &Monitor) -> bool {
     }
 }
 
+/// Is the DESKTOP the exposed top surface at this screen point (vs. an app window
+/// on top)? True only when the window under `pt` resolves to a shell desktop class
+/// (Progman / WorkerW / SHELLDLL_DefView) or to one of OUR OWN windows (the
+/// wallpaper host lives under WorkerW). This is the gate that makes desktop widgets
+/// interactive ONLY when nothing covers them — apps always keep priority. Fail-safe:
+/// any uncertainty (null hit, unknown class) returns false → the click passes to
+/// whatever is there. Mirrors `monitor_covered`'s class/PID logic.
+pub fn desktop_exposed_at(pt: POINT) -> bool {
+    unsafe {
+        let hit = WindowFromPoint(pt);
+        if hit.0.is_null() {
+            return false;
+        }
+        let root = GetAncestor(hit, GA_ROOT);
+        let top = if root.0.is_null() { hit } else { root };
+        // Our own wallpaper host (a WS_CHILD under WorkerW) counts as desktop.
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(top, Some(&mut pid));
+        if pid == std::process::id() {
+            return true;
+        }
+        let mut cls = [0u16; 64];
+        let n = GetClassNameW(top, &mut cls);
+        let class = String::from_utf16_lossy(&cls[..n.max(0) as usize]);
+        matches!(class.as_str(), "Progman" | "WorkerW" | "SHELLDLL_DefView")
+    }
+}
+
 /// Place a top-level window so it covers the entire virtual desktop (used for
 /// the casting overlay when summoned).
 pub fn cover_virtual_screen(hwnd: HWND) {
@@ -417,6 +446,68 @@ pub fn activate_window_for(exe_names: &[&str]) -> bool {
         let _ = EnumWindows(Some(activate_proc), LPARAM(&mut st as *mut _ as isize));
     }
     st.found
+}
+
+// ---------------------------------------------------------------------------
+// Casting overlay: a normal top-level window shown ON DEMAND (the casting slate /
+// storybook), NOT always-shown. An always-shown top-level WebView2 window keeps
+// seizing the foreground (WebView2 grabs focus on load; a topmost window re-wins
+// it) and SetForegroundWindow can't reliably hand it back — that jams all keyboard
+// and taskbar input. So the overlay stays hidden at rest; opening casting shows +
+// focuses it as a modal, and closing hides it and restores the prior foreground.
+// (Desktop dock/buddy interaction is handled outside this window.)
+// ---------------------------------------------------------------------------
+
+static OVERLAY_CASTING: AtomicBool = AtomicBool::new(false);
+// The foreground window the user was on before casting, so we can hand it back.
+static PREV_FOREGROUND: AtomicIsize = AtomicIsize::new(0);
+
+/// Whether the casting slate is currently open.
+pub fn set_overlay_casting(active: bool) {
+    OVERLAY_CASTING.store(active, Ordering::Relaxed);
+}
+
+pub fn overlay_casting() -> bool {
+    OVERLAY_CASTING.load(Ordering::Relaxed)
+}
+
+/// Remember the window the user is on right now (called before casting takes
+/// focus) so close_casting can return them to it.
+pub fn snapshot_foreground() {
+    unsafe {
+        let fg = GetForegroundWindow();
+        PREV_FOREGROUND.store(fg.0 as isize, Ordering::Relaxed);
+    }
+}
+
+/// A guaranteed-valid window to hand the foreground to: the captured candidate if
+/// it's still a live window, else the shell desktop (Progman).
+fn unjam_target(candidate: isize) -> Option<HWND> {
+    unsafe {
+        if candidate != 0 {
+            let h = HWND(candidate as *mut core::ffi::c_void);
+            if IsWindow(Some(h)).as_bool() {
+                return Some(h);
+            }
+        }
+        let shell = GetShellWindow();
+        if shell.0 as isize != 0 {
+            return Some(shell);
+        }
+        None
+    }
+}
+
+/// Hand the foreground back to whatever the user was using before casting (falling
+/// back to the shell desktop). This is the allowed direction for SetForegroundWindow:
+/// we currently own the foreground (the casting overlay), so we may pass it on.
+pub fn restore_foreground() {
+    let h = PREV_FOREGROUND.swap(0, Ordering::Relaxed);
+    if let Some(t) = unjam_target(h) {
+        unsafe {
+            let _ = SetForegroundWindow(t);
+        }
+    }
 }
 
 /// Place a top-level window so it covers the monitor under the cursor (so the

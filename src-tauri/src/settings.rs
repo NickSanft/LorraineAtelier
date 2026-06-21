@@ -52,6 +52,10 @@ pub struct Settings {
     pub mode: String,                      // "night" | "day"
     pub mappings: HashMap<String, String>, // element key → launch target
     pub pause_on_fullscreen: bool,
+    pub desktop_interactive: bool, // click pills/cast + drag the buddy on the desktop
+    pub buddy_x: f64,              // last dropped buddy center (virtual-desktop px)
+    pub buddy_y: f64,
+    pub buddy_placed: bool, // false → seed the buddy at the primary monitor centre
     pub gift: Gift,
     pub secret_found: bool,
     pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
@@ -63,6 +67,10 @@ impl Default for Settings {
             mode: "night".into(),
             mappings: default_mappings(),
             pause_on_fullscreen: false,
+            desktop_interactive: true, // on by default for the gift; installs the mouse hook
+            buddy_x: 0.0,
+            buddy_y: 0.0,
+            buddy_placed: false,
             gift: Gift::default(),
             secret_found: false,
             last_birthday_year: 0,
@@ -133,6 +141,21 @@ pub fn set_mode(app: &AppHandle, mode: String) {
 
 pub fn set_pause(enabled: bool) {
     store().lock().unwrap().pause_on_fullscreen = enabled;
+    save();
+}
+
+pub fn set_desktop_interactive(enabled: bool) {
+    store().lock().unwrap().desktop_interactive = enabled;
+    save();
+}
+
+pub fn set_buddy_pos(x: f64, y: f64) {
+    {
+        let mut s = store().lock().unwrap();
+        s.buddy_x = x;
+        s.buddy_y = y;
+        s.buddy_placed = true;
+    }
     save();
 }
 

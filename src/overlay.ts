@@ -41,6 +41,7 @@ const toast = document.getElementById("toast") as HTMLElement;
 const toastIcon = document.getElementById("toastIcon")!;
 const toastMsg = document.getElementById("toastMsg")!;
 const slate = document.getElementById("slate") as HTMLElement;
+const scrim = document.getElementById("scrim") as HTMLElement;
 const storybook = document.getElementById("storybook") as HTMLElement;
 const sbHeading = document.getElementById("sbHeading")!;
 const sbBody = document.getElementById("sbBody")!;
@@ -349,16 +350,30 @@ async function openStorybook() {
     }
     sbSig.textContent = gift.signature;
   }
+  scrim.style.display = "block";
   slate.style.display = "none";
   storybook.style.display = "block";
   storybookOpen = true;
 }
 
+// Rust shows/hides the overlay window; this just sets what's on it. casting →
+// scrim + slate; idle → nothing (the window is about to be hidden by Rust).
+function setOverlayMode(m: string) {
+  if (m === "casting") {
+    scrim.style.display = "block";
+    reset();   // shows the slate, sigil phase, hides the storybook
+    resize();  // size the now-visible cast canvas
+  } else {
+    scrim.style.display = "none";
+    slate.style.display = "none";
+    storybook.style.display = "none";
+    storybookOpen = false;
+  }
+}
+
+// "Hide" closes casting: Rust hides the window and restores the prior foreground.
 async function hide() {
-  try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().hide();
-  } catch { /* browser preview */ }
+  try { await invoke("close_casting"); } catch { /* browser preview */ }
 }
 
 document.getElementById("btnClear")!.addEventListener("click", reset);
@@ -366,13 +381,8 @@ document.getElementById("btnDismiss")!.addEventListener("click", () => { reset()
 document.getElementById("sbClose")!.addEventListener("click", () => { reset(); hide(); });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") { reset(); hide(); } });
 
-// Clear the slate each time the window is summoned (regains focus).
-(async () => {
-  try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().onFocusChanged(({ payload }) => { if (payload && !storybookOpen) reset(); });
-  } catch { /* browser preview */ }
-})();
+// Rust drives the overlay mode (it shows the window for casting, hides it after).
+listen<string>("overlay:mode", (e) => setOverlayMode(e.payload));
 
 // The birthday auto-bloom (and the Preview button) surface the dedication here.
 listen("gift:birthday", () => openStorybook());
@@ -387,4 +397,4 @@ function frame(ts: number) {
 requestAnimationFrame(frame);
 
 resize();
-reset();
+setOverlayMode("idle");

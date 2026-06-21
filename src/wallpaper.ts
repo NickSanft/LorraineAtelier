@@ -136,10 +136,42 @@ function updateDockDisplay(mode: Mode, inkPercent?: number) {
     modeIndicator.innerHTML =
       `<span style="font-size:calc(19px * var(--ui-scale,1));line-height:1;color:var(--c-gold)">${isNight ? "☾" : "☀"}</span>` +
       `<span style="font-family:'Cinzel',serif;font-size:calc(8px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">${isNight ? "Night" : "Day"}</span>`;
+    scheduleHitRects(); // the mode indicator width changed → dock layout shifted
   }
   if (inkLevelBar && inkPercent != null) {
     inkLevelBar.style.height = Math.max(0, Math.min(100, inkPercent)) + "%";
   }
+}
+
+// ---- desktop-layer interactivity: publish hit-rects to Rust ----
+// The dock has pointer-events:none and the wallpaper sits below the icons, so the
+// OS never delivers clicks here. Instead Rust runs a low-level mouse hook and acts
+// on a click only when it lands in one of these rects AND the desktop is exposed.
+// We report each pill / the cast glyph in LOCAL physical px (origin = this monitor's
+// top-left); Rust offsets by the monitor origin. Only the primary monitor has a dock.
+interface HitRect { kind: string; key?: string; x0: number; y0: number; x1: number; y1: number; }
+function publishHitRects() {
+  const rects: HitRect[] = [];
+  if (isPrimary) {
+    const dpr = window.devicePixelRatio || 1;
+    const add = (el: Element | null, kind: string, key?: string) => {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      rects.push({ kind, key, x0: r.left * dpr, y0: r.top * dpr, x1: r.right * dpr, y1: r.bottom * dpr });
+    };
+    document.querySelectorAll("[data-pill]").forEach((el) => add(el, "pill", (el as HTMLElement).dataset.pill));
+    add(document.getElementById("castGlyph"), "cast");
+    add(document.getElementById("modeIndicator"), "mode");   // toggle day/night
+    add(document.getElementById("attunePill"), "attune");    // toggle music attunement
+  }
+  invoke("set_hit_rects", { label: selfLabel, rects }).catch(() => {});
+}
+let hitRectsRaf = 0;
+function scheduleHitRects() {
+  cancelAnimationFrame(hitRectsRaf);
+  // Two frames so layout (and any --ui-scale / inset change) has settled.
+  hitRectsRaf = requestAnimationFrame(() => requestAnimationFrame(publishHitRects));
 }
 
 // ---- brushbuddy: a single ink companion that roams ACROSS all monitors ----
@@ -149,7 +181,7 @@ function updateDockDisplay(mode: Mode, inkPercent?: number) {
 // buddy, so it walks off one screen and onto the next. The same event carries the
 // `primary` flag that drives the primary/secondary widget split below.
 interface BuddyMsg {
-  label: string; x: number; y: number; visible: boolean; flip: number; eye: number; primary: boolean;
+  label: string; x: number; y: number; visible: boolean; flip: number; eye: number; primary: boolean; held: boolean;
   insetTop: number; insetBottom: number; insetLeft: number; insetRight: number;
 }
 const buddyEl = document.getElementById("buddy");
@@ -177,6 +209,7 @@ function applyPrimary(primary: boolean) {
   if (sealEl) sealEl.style.display = primary ? "block" : "none";
   if (topStripEl) topStripEl.style.display = primary ? "flex" : "none";
   if (dockEl) dockEl.style.display = primary ? "flex" : "none";
+  scheduleHitRects(); // dock appeared/disappeared → republish (or clear) hit-rects
 }
 
 // ---- taskbar-aware safe area ----
@@ -200,6 +233,7 @@ function applyInsets(top: number, right: number, bottom: number, left: number) {
   root.style.bottom = (bottom / dpr) + "px";
   root.style.left = insetLeftCss + "px";
   sizeAll(); // canvases now cover the (possibly smaller) work area
+  scheduleHitRects(); // the dock shifted with the work-area inset
 }
 
 listen<BuddyMsg>("buddy", (e) => {
@@ -209,8 +243,11 @@ listen<BuddyMsg>("buddy", (e) => {
   applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
   if (!buddyEl) return;
   buddyEl.style.opacity = m.visible ? "1" : "0";
+  // While held, the buddy lifts (scales up) and gains a warm glow — the "picked up" cue.
+  const lift = m.held ? 1.16 : 1;
   buddyEl.style.transform =
-    `translate(${m.x - 24 - insetLeftCss}px, ${m.y - 21 - insetTopCss}px) scale(${m.flip * uiScale}, ${uiScale})`;
+    `translate(${m.x - 24 - insetLeftCss}px, ${m.y - 21 - insetTopCss}px) scale(${m.flip * uiScale * lift}, ${uiScale * lift})`;
+  buddyEl.style.filter = m.held ? "drop-shadow(0 3px 6px rgba(8,6,14,.5)) drop-shadow(0 0 9px var(--c-gold))" : "";
   if (buddyEyes) buddyEyes.style.transform = `scaleY(${m.eye.toFixed(3)})`;
 }, { target: selfLabel });
 
@@ -290,6 +327,7 @@ listen<{ attuned: boolean; reason?: string }>("viz:source-changed", (e) => {
   setAttuned(e.payload.attuned);
   if (attuneLabel) attuneLabel.textContent = e.payload.attuned ? "Resonance" : "Attune";
   if (attuneIcon) attuneIcon.textContent = e.payload.attuned ? "♪" : "▶";
+  scheduleHitRects(); // the pill's label width changed (Attune ↔ Resonance)
 });
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -335,9 +373,11 @@ applyMode(curMode); // night by default (matches the inline CSS — no flash)
 invoke<{ mode: Mode }>("get_settings").then((s) => { if (s && s.mode) applyMode(s.mode); }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 sizeAll();
+scheduleHitRects(); // initial publish (clears until this monitor learns it's primary)
 window.addEventListener("resize", () => {
   setUiScale();
   sizeAll();
+  scheduleHitRects();
 });
 updateClock();
 setInterval(updateClock, 1000);
