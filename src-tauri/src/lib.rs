@@ -377,6 +377,65 @@ fn spawn_watchdog(app: AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
+// The gift: secret storybook surfacing + birthday auto-bloom
+// ---------------------------------------------------------------------------
+
+/// Show the casting overlay carrying the storybook (used by the birthday auto-bloom
+/// and the "Preview dedication" button): position + show + focus the overlay, emit
+/// `gift:birthday` so it swaps to the storybook view, and `gift:bloom` for a
+/// celebratory wallpaper bloom on every monitor.
+fn surface_storybook(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("overlay") {
+        #[cfg(windows)]
+        if let Ok(h) = w.hwnd() {
+            workerw::cover_active_monitor(h);
+        }
+        let _ = w.set_ignore_cursor_events(false);
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    let _ = app.emit("gift:birthday", ());
+    let _ = app.emit("gift:bloom", ());
+}
+
+#[cfg(windows)]
+fn local_ymd() -> (i32, u16, u16) {
+    use windows::Win32::System::SystemInformation::GetLocalTime;
+    let st = unsafe { GetLocalTime() };
+    (st.wYear as i32, st.wMonth, st.wDay)
+}
+
+/// Surface the dedication once on the configured birthday (local time), guarded by
+/// `lastBirthdayYear` so it fires at most once per year.
+fn check_birthday(app: &AppHandle) {
+    let gift = settings::get().gift;
+    if gift.birthday.trim().is_empty() {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        let (year, m, d) = local_ymd();
+        let today = format!("{m:02}-{d:02}");
+        if today == gift.birthday && settings::get().last_birthday_year != year {
+            settings::set_last_birthday_year(year);
+            settings::set_secret_found(true);
+            log(app, "birthday: surfacing the Hidden Page");
+            surface_storybook(app);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+}
+
+fn spawn_birthday_watch(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        let a = app.clone();
+        let _ = app.run_on_main_thread(move || check_birthday(&a));
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Brushbuddy — a single ink companion that roams ACROSS all monitors.
 // ---------------------------------------------------------------------------
 //
@@ -735,6 +794,13 @@ fn mark_secret_found() -> String {
     "secret found".into()
 }
 
+/// Preview the dedication storybook on demand (for personalizing the gift).
+#[tauri::command]
+fn preview_storybook(app: AppHandle) -> String {
+    surface_storybook(&app);
+    "previewing dedication".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -843,6 +909,7 @@ pub fn run() {
             set_mapping,
             reset_mappings,
             mark_secret_found,
+            preview_storybook,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
@@ -888,6 +955,7 @@ pub fn run() {
                 ensure_attached(_handle);
                 spawn_watchdog(_handle.clone());
                 spawn_buddy(_handle.clone());
+                spawn_birthday_watch(_handle.clone());
                 // Belt-and-suspenders: re-broadcast the persisted mode once windows
                 // exist, in case any wallpaper pulled before settings were loaded.
                 let _ = _handle.emit("settings:mode", settings::get().mode);

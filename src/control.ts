@@ -109,6 +109,8 @@ async function main() {
     append("bindings reset to defaults");
   });
 
+  document.getElementById("preview")!.addEventListener("click", () => invoke("preview_storybook").then(() => append("previewing dedication")));
+
   document.getElementById("reattach")!.addEventListener("click", () => invoke("reattach_wallpaper").then(() => append("re-attach requested")));
   document.getElementById("overlay")!.addEventListener("click", () => invoke("toggle_overlay"));
   document.getElementById("detach")!.addEventListener("click", () => invoke("detach_wallpaper").then(() => append("detached")));

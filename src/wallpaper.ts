@@ -277,6 +277,9 @@ listen<CastFire>("cast:fire", (e) => {
   startBloom(m);
 });
 
+// Celebratory bloom (birthday auto-bloom / dedication preview) — no ink change.
+listen("gift:bloom", () => startBloom({ sigil: "circle", score: 95, inverse: false, sideways: false, jutDir: 0, hue: pal.gold, key: "", ink: -1 }));
+
 // Real-audio visualizer: Rust pushes band frames ~45 Hz when "Attune" is on; the
 // seal/ambient/glow react to them via currentBands(). Falls back to generative
 // automatically when capture stops.

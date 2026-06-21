@@ -1,6 +1,7 @@
 export {}; // module scope
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { drawGlyphPath } from "./atelier/draw/viz";
 import type { Sigil } from "./atelier/palette";
 
@@ -71,6 +72,7 @@ let sigilDiag = 0;
 let prepared: { inverse: boolean; ringScore: number } | null = null;
 let blooming = false;
 let bloomRaf = 0;
+let storybookOpen = false;
 
 function reset() {
   cancelAnimationFrame(bloomRaf);
@@ -78,6 +80,7 @@ function reset() {
   sigilCenter = null; sigilScore = 0; sigilDiag = 0; prepared = null; blooming = false;
   storybook.style.display = "none"; // back to the casting slate
   slate.style.display = "flex";
+  storybookOpen = false;
   phaseLabel.textContent = "Draw the central sigil";
   hudGlyph.textContent = "·"; hudGlyph.style.color = "var(--c-soft)";
   hudName.textContent = "Awaiting sigil"; hudApp.textContent = "—";
@@ -348,6 +351,7 @@ async function openStorybook() {
   }
   slate.style.display = "none";
   storybook.style.display = "block";
+  storybookOpen = true;
 }
 
 async function hide() {
@@ -366,9 +370,12 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape") { reset(); h
 (async () => {
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().onFocusChanged(({ payload }) => { if (payload) reset(); });
+    await getCurrentWindow().onFocusChanged(({ payload }) => { if (payload && !storybookOpen) reset(); });
   } catch { /* browser preview */ }
 })();
+
+// The birthday auto-bloom (and the Preview button) surface the dedication here.
+listen("gift:birthday", () => openStorybook());
 
 // Continuous idle redraw so the seal canvas breathes (slowly counter-rotating
 // guide rings) while you draw; the bloom animation takes over (this skips) during
