@@ -33,6 +33,18 @@
       .brow .test { font-size: 9px; padding: 6px 11px; }
       #log { flex: 1; min-height: 84px; overflow: auto; background: #0d0a14; border: 1px solid #2a2238; border-radius: 8px; padding: 9px; font: 11px/1.5 "Cascadia Code", monospace; white-space: pre-wrap; color: #b9aed0; }
       .hint { font-size: 11px; opacity: .5; }
+      #tomes { display: flex; flex-direction: column; gap: 7px; }
+      .trow { display: flex; align-items: center; gap: 11px; padding: 7px 10px; border: 1px solid var(--edge); border-radius: 8px; background: #15121d; }
+      .trow.locked { opacity: .48; }
+      .trow .tg { font-size: 20px; width: 26px; text-align: center; line-height: 1; }
+      .trow .tmeta { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+      .trow .tname { font-family: "Cinzel", serif; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+      .trow .tsub { font-size: 11px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .trow .tcount { font: 10px "Cascadia Code", monospace; opacity: .6; white-space: nowrap; }
+      #forbiddenPage { padding: 9px 11px; border: 1px dashed var(--edge); border-radius: 8px; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      #forbiddenPage.unlocked { border-style: solid; border-color: var(--gold); background: rgba(232,184,74,.07); }
+      @keyframes tomesflash { from { box-shadow: 0 0 0 2px var(--gold); } to { box-shadow: 0 0 0 2px transparent; } }
+      .flash { animation: tomesflash 1.1s ease; }
     </style>
   </head>
   <body>
@@ -55,6 +67,14 @@
       <h2>Spell Bindings</h2>
       <div id="bindings"></div>
       <div class="dev"><button id="resetBindings">Reset to defaults</button></div>
+    </div>
+
+    <!-- Tower of Tomes spellbook (populated by control.ts) -->
+    <div class="panel" id="tomesPanel">
+      <h2>Tower of Tomes</h2>
+      <div id="tomes"></div>
+      <div id="tomesHint" class="hint"></div>
+      <div id="forbiddenPage"></div>
     </div>
 
     <div class="panel">

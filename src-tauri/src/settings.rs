@@ -59,6 +59,7 @@ pub struct Settings {
     pub gift: Gift,
     pub secret_found: bool,
     pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
+    pub discovered: HashMap<String, u32>, // element key → times cast (Tower of Tomes)
 }
 
 impl Default for Settings {
@@ -74,6 +75,7 @@ impl Default for Settings {
             gift: Gift::default(),
             secret_found: false,
             last_birthday_year: 0,
+            discovered: HashMap::new(),
         }
     }
 }
@@ -171,6 +173,15 @@ pub fn reset_mappings() {
 
 pub fn set_secret_found(found: bool) {
     store().lock().unwrap().secret_found = found;
+    save();
+}
+
+/// Record that an element was cast (first cast inscribes it in the Tower of Tomes).
+pub fn record_discovery(key: &str) {
+    {
+        let mut s = store().lock().unwrap();
+        *s.discovered.entry(key.to_string()).or_insert(0) += 1;
+    }
     save();
 }
 

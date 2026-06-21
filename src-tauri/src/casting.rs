@@ -203,6 +203,13 @@ pub fn fire_spell(
         None => ("circle", "○", "the app", "cast", "#2fd6c6"),
     };
 
+    // Inscribe the element in the Tower of Tomes the first time it's cast (and keep
+    // a running count); the spellbook panel refreshes on `tomes:changed`.
+    if spell.is_some() {
+        crate::settings::record_discovery(&key);
+        let _ = app.emit("tomes:changed", ());
+    }
+
     // Cursed misfire on a confident, non-reversed, non-sideways cast. Canon: a
     // lop-sided (asymmetric) seal is unstable, so low symmetry raises the odds
     // (~10% at perfect symmetry → ~22% at fully lop-sided).

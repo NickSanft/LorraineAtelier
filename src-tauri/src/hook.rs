@@ -62,6 +62,8 @@ pub enum HitTarget {
     Mode,
     /// Toggle "Attune to music" (the seal's Attune/Resonance pill).
     Attune,
+    /// Open the Tower of Tomes spellbook (the dock's ❧ Tomes button).
+    Tomes,
 }
 
 struct GlobalRect {
@@ -183,6 +185,10 @@ fn ensure_consumer(app: &AppHandle) {
                 HookMsg::Action(HitTarget::Attune) => {
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || crate::hook_toggle_attune(&app2));
+                }
+                HookMsg::Action(HitTarget::Tomes) => {
+                    let app2 = app.clone();
+                    let _ = app.run_on_main_thread(move || crate::hook_open_tomes(&app2));
                 }
                 HookMsg::PersistBuddy => {
                     crate::buddy_persist(); // file I/O, off the hook proc

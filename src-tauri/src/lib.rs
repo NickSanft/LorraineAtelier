@@ -104,6 +104,17 @@ pub(crate) fn hook_toggle_attune(app: &AppHandle) {
     }
 }
 
+/// Open the Tower of Tomes from the dock's ❧ button: show the control window and
+/// tell it to surface the spellbook panel.
+#[cfg(windows)]
+pub(crate) fn hook_open_tomes(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    let _ = app.emit("open:tomes", ());
+}
+
 #[cfg(windows)]
 fn close_casting_impl(app: &AppHandle) {
     // Hiding the window is what truly releases the foreground — a hidden window can
@@ -1005,6 +1016,7 @@ fn rebuild_hit_rects() {
                 "pill" => hook::HitTarget::Pill(r.key.clone().unwrap_or_default()),
                 "mode" => hook::HitTarget::Mode,
                 "attune" => hook::HitTarget::Attune,
+                "tomes" => hook::HitTarget::Tomes,
                 _ => continue,
             };
             out.push((
@@ -1086,8 +1098,9 @@ fn reset_mappings() -> String {
 
 /// Mark the secret pentacle as discovered (unlocks the Hidden Page / spellbook).
 #[tauri::command]
-fn mark_secret_found() -> String {
+fn mark_secret_found(app: AppHandle) -> String {
     settings::set_secret_found(true);
+    let _ = app.emit("tomes:changed", ()); // unlock the Forbidden Page live
     "secret found".into()
 }
 

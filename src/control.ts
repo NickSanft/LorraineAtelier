@@ -12,6 +12,10 @@ const attuneBtn = document.getElementById("attune") as HTMLButtonElement;
 const pauseBtn = document.getElementById("pause") as HTMLButtonElement;
 const interactBtn = document.getElementById("interact") as HTMLButtonElement;
 const bindingsEl = document.getElementById("bindings")!;
+const tomesEl = document.getElementById("tomes")!;
+const tomesHintEl = document.getElementById("tomesHint")!;
+const forbiddenEl = document.getElementById("forbiddenPage")!;
+const tomesPanel = document.getElementById("tomesPanel")!;
 
 const ELEMENTS = [
   { key: "fire", glyph: "△", name: "Fire", hue: "#e8954a" },
@@ -42,7 +46,14 @@ function renderInteract() {
   interactBtn.classList.toggle("on", interactOn);
 }
 
-interface SettingsDto { mode: string; pauseOnFullscreen: boolean; desktopInteractive: boolean; mappings: Record<string, string> }
+interface SettingsDto {
+  mode: string;
+  pauseOnFullscreen: boolean;
+  desktopInteractive: boolean;
+  mappings: Record<string, string>;
+  discovered: Record<string, number>;
+  secretFound: boolean;
+}
 
 async function main() {
   let core: typeof import("@tauri-apps/api/core");
@@ -83,12 +94,62 @@ async function main() {
     document.getElementById("bindingsPanel")!.style.display = "flex";
   }
 
+  // The Tower of Tomes: each element revealed once first cast (with a running count
+  // + its bound target), a 4/4 hint, and the Forbidden Page that unlocks on the
+  // secret pentacle (→ the dedication).
+  function buildTomes(s: SettingsDto) {
+    const disc = s.discovered || {};
+    tomesEl.innerHTML = "";
+    let known = 0;
+    for (const el of ELEMENTS) {
+      const n = disc[el.key] ?? 0;
+      const row = document.createElement("div");
+      row.className = n > 0 ? "trow" : "trow locked";
+      const g = document.createElement("span");
+      g.className = "tg"; g.textContent = n > 0 ? el.glyph : "❔";
+      g.style.color = n > 0 ? el.hue : "#6b6080";
+      const meta = document.createElement("div");
+      meta.className = "tmeta";
+      const name = document.createElement("span");
+      name.className = "tname"; name.textContent = n > 0 ? el.name : "Unknown seal";
+      const sub = document.createElement("span");
+      sub.className = "tsub";
+      sub.textContent = n > 0 ? "→ " + (s.mappings?.[el.key] || "files") : `Draw the ${el.glyph} sigil to inscribe it`;
+      meta.append(name, sub);
+      const count = document.createElement("span");
+      count.className = "tcount"; count.textContent = n > 0 ? `${n}×` : "";
+      row.append(g, meta, count);
+      tomesEl.appendChild(row);
+      if (n > 0) known++;
+    }
+    tomesHintEl.textContent = known >= ELEMENTS.length
+      ? "✦ Four seals inscribed. They whisper of a fifth — a star, hidden in the slate."
+      : `${known}/${ELEMENTS.length} seals inscribed.`;
+    forbiddenEl.innerHTML = "";
+    forbiddenEl.classList.toggle("unlocked", !!s.secretFound);
+    const label = document.createElement("span");
+    if (s.secretFound) {
+      label.textContent = "✦ The Hidden Page lies open.";
+      const btn = document.createElement("button");
+      btn.textContent = "Read it"; btn.style.fontSize = "10px"; btn.style.padding = "6px 12px";
+      btn.addEventListener("click", () => { invoke("preview_storybook"); });
+      forbiddenEl.append(label, btn);
+    } else {
+      label.textContent = "🔒 The Forbidden Page is sealed — find the secret star.";
+      forbiddenEl.append(label);
+    }
+  }
+  async function refreshTomes() {
+    try { buildTomes(await invoke<SettingsDto>("get_settings")); } catch { /* */ }
+  }
+
   try {
     const s = await invoke<SettingsDto>("get_settings");
     mode = s.mode === "day" ? "day" : "night";
     pauseOn = !!s.pauseOnFullscreen;
     interactOn = !!s.desktopInteractive;
     buildBindings(s.mappings || {});
+    buildTomes(s);
   } catch (e) {
     append("get_settings ✗ " + e);
   }
@@ -131,6 +192,13 @@ async function main() {
   await event.listen<string>("settings:mode", (e) => { mode = e.payload === "day" ? "day" : "night"; renderMode(); });
   await event.listen<boolean>("settings:interactive", (e) => { interactOn = !!e.payload; renderInteract(); });
   await event.listen<{ attuned: boolean }>("viz:source-changed", (e) => { attuned = !!e.payload.attuned; renderAttune(); });
+  // Tower of Tomes: refresh on a new cast / secret-found; surface it on the dock click.
+  await event.listen("tomes:changed", () => { void refreshTomes(); });
+  await event.listen("open:tomes", () => {
+    void refreshTomes();
+    tomesPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    tomesPanel.classList.remove("flash"); void tomesPanel.offsetWidth; tomesPanel.classList.add("flash");
+  });
   await event.listen<string>("log", (e) => append(e.payload));
   append("control ready");
 }

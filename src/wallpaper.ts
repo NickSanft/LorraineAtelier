@@ -184,6 +184,7 @@ function publishHitRects() {
     add(document.getElementById("castGlyph"), "cast");
     add(document.getElementById("modeIndicator"), "mode");   // toggle day/night
     add(document.getElementById("attunePill"), "attune");    // toggle music attunement
+    add(document.getElementById("tomesBtn"), "tomes");       // open the Tower of Tomes
   }
   invoke("set_hit_rects", { label: selfLabel, rects }).catch(() => {});
 }
