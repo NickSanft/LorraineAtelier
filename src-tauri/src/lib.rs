@@ -12,6 +12,10 @@ pub mod recognizer;
 mod casting;
 mod launcher;
 
+/// WASAPI loopback audio capture for the "Attune to your music" visualizer.
+#[cfg(windows)]
+mod audio;
+
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
@@ -640,6 +644,39 @@ fn get_status() -> String {
     "noop (non-windows)".into()
 }
 
+/// Toggle the visualizer source: `true` = "Attune" (WASAPI loopback capture),
+/// `false` = generative. The wallpaper falls back to generative if capture fails.
+#[tauri::command]
+fn set_viz_source(app: AppHandle, attuned: bool) -> String {
+    #[cfg(windows)]
+    {
+        if attuned {
+            audio::start(app);
+        } else {
+            audio::stop();
+        }
+        return format!("viz attuned={attuned}");
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, attuned);
+        "noop (non-windows)".into()
+    }
+}
+
+/// Whether loopback capture is currently running.
+#[tauri::command]
+fn viz_status() -> bool {
+    #[cfg(windows)]
+    {
+        return audio::is_capturing();
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 /// Power-saving toggle: pause a monitor's wallpaper while a fullscreen window
 /// covers it. Default OFF. (Wired to a Settings toggle in Phase 7.)
 #[tauri::command]
@@ -662,10 +699,11 @@ fn set_pause_on_fullscreen(enabled: bool) -> String {
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let inscribe = MenuItem::with_id(app, "inscribe", "Inscribe (overlay)", true, None::<&str>)?;
+    let attune = MenuItem::with_id(app, "attune", "Attune to music (toggle)", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show control", true, None::<&str>)?;
     let reattach = MenuItem::with_id(app, "reattach", "Re-attach wallpaper", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&inscribe, &show, &reattach, &quit])?;
+    let menu = Menu::with_items(app, &[&inscribe, &attune, &show, &reattach, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("lorraine-tray")
         .tooltip("Lorraine Atelier")
@@ -673,6 +711,18 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "inscribe" => overlay_toggle(app),
+            "attune" => {
+                #[cfg(windows)]
+                {
+                    let was = audio::is_capturing();
+                    println!("[lorraine] tray: Attune clicked (was capturing={was})");
+                    if was {
+                        audio::stop();
+                    } else {
+                        audio::start(app.clone());
+                    }
+                }
+            }
             "show" => {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
@@ -736,6 +786,8 @@ pub fn run() {
             toggle_overlay,
             get_status,
             set_pause_on_fullscreen,
+            set_viz_source,
+            viz_status,
             casting::classify_sigil,
             casting::analyze_ring,
             casting::fire_spell

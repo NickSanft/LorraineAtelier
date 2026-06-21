@@ -13,7 +13,8 @@ import {
   getTintBackgroundForMode,
   getTintOpacityForMode,
 } from "./atelier/palette";
-import { bands } from "./atelier/audio/generative";
+import type { Bands } from "./atelier/audio/generative";
+import { currentBands, onBandFrame, setAttuned, takeBeat, type BandFrameMsg } from "./atelier/audio/source";
 import { makeMotes, drawAmbient, type Mote } from "./atelier/draw/ambient";
 import { attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
@@ -100,7 +101,7 @@ function sizeAll() {
   motes = makeMotes(w, h, 56);
 }
 
-function drawAmbientFrame(ts: number, b: ReturnType<typeof bands>) {
+function drawAmbientFrame(ts: number, b: Bands) {
   const c = ambient as CV;
   if (!motes.length) sizeAll();
   const ctx = c.getContext("2d")!;
@@ -108,10 +109,10 @@ function drawAmbientFrame(ts: number, b: ReturnType<typeof bands>) {
 }
 
 const sealState = makeSealState();
-function drawVizFrame(ts: number, b: ReturnType<typeof bands>, dt: number) {
+function drawVizFrame(ts: number, b: Bands, dt: number, beat: boolean) {
   const c = viz as CV;
   const ctx = c.getContext("2d")!;
-  stepSeal(sealState, b, dt);
+  stepSeal(sealState, b, dt, beat);
   drawSeal(ctx, c._cssw!, c._cssh!, sealState, pal, attuned(ts, SIGILS));
 }
 
@@ -270,6 +271,18 @@ listen<CastFire>("cast:fire", (e) => {
   startBloom(m);
 });
 
+// Real-audio visualizer: Rust pushes band frames ~45 Hz when "Attune" is on; the
+// seal/ambient/glow react to them via currentBands(). Falls back to generative
+// automatically when capture stops.
+const attuneLabel = document.getElementById("attuneLabel");
+const attuneIcon = document.getElementById("attuneIcon");
+listen<BandFrameMsg>("viz:bands", (e) => onBandFrame(e.payload));
+listen<{ attuned: boolean; reason?: string }>("viz:source-changed", (e) => {
+  setAttuned(e.payload.attuned);
+  if (attuneLabel) attuneLabel.textContent = e.payload.attuned ? "Resonance" : "Attune";
+  if (attuneIcon) attuneIcon.textContent = e.payload.attuned ? "♪" : "▶";
+});
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function updateClock() {
@@ -283,13 +296,18 @@ function updateClock() {
 }
 
 let lastTs = 0;
+let glowVal = 0;
 function tick(ts: number) {
   const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.016;
   lastTs = ts;
-  const b = bands(ts);
+  const b = currentBands(ts); // generative or real (attuned) audio
   drawAmbientFrame(ts, b);
-  drawVizFrame(ts, b, dt);
-  glow.style.opacity = glowOpacity(b, pal);
+  drawVizFrame(ts, b, dt, takeBeat()); // advances sealState (smoothed bands)
+  // Glow follows the seal's already-enveloped bass, then eases again so brightness
+  // shifts gradually — no rapid flicker (photosensitivity-friendly).
+  const glowTarget = parseFloat(glowOpacity({ bass: sealState.bass, mid: sealState.mid, high: sealState.high }, pal));
+  glowVal += (glowTarget - glowVal) * 0.07;
+  glow.style.opacity = glowVal.toFixed(3);
   requestAnimationFrame(tick);
 }
 

@@ -56,8 +56,8 @@ export function stepSeal(s: SealState, b: Bands, dt: number, beatHint = false): 
   s.outer += dt * (0.14 + s.bass * 0.7);
   s.inner -= dt * (0.2 + s.high * 1.0);
   for (const rp of s.ripples) {
-    rp.r += dt * (210 + s.loud * 200);
-    rp.a -= dt * 0.85;
+    rp.r += dt * (90 + s.loud * 100); // gentler expansion
+    rp.a -= dt * 0.5; // slower fade
   }
   s.ripples = s.ripples.filter((rp) => rp.a > 0);
 }
@@ -79,7 +79,7 @@ export function drawSeal(
   if (!w || !h) return;
   ctx.clearRect(0, 0, w, h);
   const cx = w / 2, cy = h / 2;
-  const R = (Math.min(w, h) / 2 - 8) * (0.9 + s.loud * 0.2); // loudness → size
+  const R = (Math.min(w, h) / 2 - 8) * (0.88 + s.loud * 0.18 + s.bass * 0.06); // loudness/bass → size
   const teal = pal.teal, gold = pal.gold;
   ctx.save();
   ctx.translate(cx, cy);
@@ -103,18 +103,25 @@ export function drawSeal(
     { r: R * 0.5, rot: s.outer * 1.4, band: s.bass, wd: 1.3 },
   ];
   rings.forEach((rg, i) => {
+    const isOuter = i === 0;
     ctx.save();
     ctx.rotate(rg.rot);
     ctx.beginPath();
     ctx.strokeStyle = teal;
-    ctx.globalAlpha = 0.3 + rg.band * 0.5;
-    ctx.lineWidth = rg.wd + s.bass * 2.4; // bass = ink flow (thicker line)
-    // on a beat the outer ring "closes" (solid); otherwise it's a drawn dash
-    if (i === 0 && s.beat > 0.45) ctx.setLineDash([]);
-    else ctx.setLineDash([2, 9 + s.mid * 14]);
+    // The outer ring breathes on the SLOW loudness envelope (gradual); the inner
+    // rings snap with bass (lively). Keeps the outermost circle from flickering.
+    ctx.globalAlpha = 0.32 + (isOuter ? s.loud * 0.5 : rg.band * 0.6);
+    ctx.lineWidth = rg.wd + rg.band * 1.4 + (isOuter ? s.loud * 2.2 : s.bass * 3.2);
+    if (isOuter) {
+      // a beat "closes" the ring GRADUALLY as the flash decays (no hard snap)
+      const gap = Math.max(0.5, (9 + s.mid * 12) * (1 - s.beat));
+      ctx.setLineDash([2, gap]);
+    } else {
+      ctx.setLineDash([2, 9 + s.mid * 14]);
+    }
     ctx.lineDashOffset = -rg.rot * 60;
     ctx.shadowColor = teal;
-    ctx.shadowBlur = 7 + s.bass * 20; // ink bleed
+    ctx.shadowBlur = 7 + (isOuter ? s.loud * 14 : s.bass * 20); // ink bleed
     ctx.arc(0, 0, rg.r, 0, 6.2832);
     ctx.stroke();
     ctx.restore();
@@ -123,19 +130,22 @@ export function drawSeal(
 
   // orbiting ink particles with short comet trails (ink has weight, trails off).
   const np = 26;
+  const energy = s.mid * 0.55 + s.high * 0.7; // mid+treble drive particle vigor
   for (let i = 0; i < np; i++) {
     const a = (i / np) * 6.2832 + s.outer * 1.6;
-    const rr = R * 0.74 + Math.sin(s.inner * 3 + i) * 4;
+    // particles push outward on bass and wobble on mid → clearly audio-reactive
+    // even on bass-heavy music (treble alone is often too sparse to notice).
+    const rr = R * (0.66 + s.bass * 0.18) + Math.sin(s.inner * 3 + i) * (3 + s.mid * 10);
     const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
-    const tail = 0.05 + s.mid * 0.12;
+    const tail = 0.05 + s.mid * 0.22 + s.high * 0.1; // longer comet with energy
     const xt = Math.cos(a - tail) * rr, yt = Math.sin(a - tail) * rr;
     ctx.beginPath();
     ctx.strokeStyle = teal;
-    ctx.globalAlpha = Math.min(1, 0.22 + s.high * 0.7 * (i % 4 === 0 ? 1 : 0.5));
-    ctx.lineWidth = 1.2 + s.high * 2.2;
+    ctx.globalAlpha = Math.min(1, 0.2 + energy * 1.1 * (i % 4 === 0 ? 1 : 0.55));
+    ctx.lineWidth = 1.3 + energy * 4.0;
     ctx.lineCap = "round";
     ctx.shadowColor = teal;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 7 + energy * 14;
     ctx.moveTo(xt, yt);
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -147,10 +157,10 @@ export function drawSeal(
     const a = (i / 8) * 6.2832 + s.outer * 0.2;
     ctx.beginPath();
     ctx.strokeStyle = gold;
-    ctx.globalAlpha = 0.12 + s.high * 0.6;
-    ctx.lineWidth = 0.9 + s.high * 1.2;
+    ctx.globalAlpha = 0.15 + s.high * 0.9;
+    ctx.lineWidth = 1.0 + s.high * 1.8;
     ctx.shadowColor = gold;
-    ctx.shadowBlur = s.high * 16;
+    ctx.shadowBlur = s.high * 26;
     ctx.moveTo(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5);
     ctx.lineTo(Math.cos(a) * R * 0.98, Math.sin(a) * R * 0.98);
     ctx.stroke();
