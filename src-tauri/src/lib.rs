@@ -728,6 +728,13 @@ fn reset_mappings() -> String {
     "mappings reset".into()
 }
 
+/// Mark the secret pentacle as discovered (unlocks the Hidden Page / spellbook).
+#[tauri::command]
+fn mark_secret_found() -> String {
+    settings::set_secret_found(true);
+    "secret found".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -835,6 +842,7 @@ pub fn run() {
             toggle_mode,
             set_mapping,
             reset_mappings,
+            mark_secret_found,
             set_viz_source,
             viz_status,
             casting::classify_sigil,

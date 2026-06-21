@@ -16,17 +16,57 @@ use tauri::{AppHandle, Emitter};
 /// Must match the `identifier` in tauri.conf.json (app config dir name).
 const APP_DIR: &str = "com.divora.lorraineatelier";
 
+/// The gift's personalizable dedication — the storybook shown when the secret
+/// pentacle is drawn (and surfaced on the birthday). The dev edits these strings
+/// before building (or in settings.json); placeholder copy ships so it always
+/// renders. `birthday` is "MM-DD" (empty = no auto-surface).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Gift {
+    pub recipient_name: String,
+    pub heading: String,
+    pub paragraphs: Vec<String>,
+    pub signature: String,
+    pub birthday: String,
+}
+
+impl Default for Gift {
+    fn default() -> Self {
+        Self {
+            recipient_name: String::new(),
+            heading: "A Seal in No Tome".into(),
+            paragraphs: vec![
+                "Some magic isn't drawn for power, but for the people we draw it for.".into(),
+                "You found the secret star — so here is the spell with no incantation: a small, glowing wish that you are seen, and treasured, and that the world is a little gentler for your being in it.".into(),
+                "Happy birthday. May your year be full of quiet wonders.".into(),
+            ],
+            signature: "— with love".into(),
+            birthday: String::new(),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub mode: String,                      // "night" | "day"
     pub mappings: HashMap<String, String>, // element key → launch target
     pub pause_on_fullscreen: bool,
+    pub gift: Gift,
+    pub secret_found: bool,
+    pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { mode: "night".into(), mappings: default_mappings(), pause_on_fullscreen: false }
+        Self {
+            mode: "night".into(),
+            mappings: default_mappings(),
+            pause_on_fullscreen: false,
+            gift: Gift::default(),
+            secret_found: false,
+            last_birthday_year: 0,
+        }
     }
 }
 
@@ -103,5 +143,15 @@ pub fn set_mapping(key: String, target: String) {
 
 pub fn reset_mappings() {
     store().lock().unwrap().mappings = default_mappings();
+    save();
+}
+
+pub fn set_secret_found(found: bool) {
+    store().lock().unwrap().secret_found = found;
+    save();
+}
+
+pub fn set_last_birthday_year(year: i32) {
+    store().lock().unwrap().last_birthday_year = year;
     save();
 }

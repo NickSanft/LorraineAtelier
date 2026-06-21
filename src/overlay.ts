@@ -39,6 +39,13 @@ const barSym = document.getElementById("barSym") as HTMLElement;
 const toast = document.getElementById("toast") as HTMLElement;
 const toastIcon = document.getElementById("toastIcon")!;
 const toastMsg = document.getElementById("toastMsg")!;
+const slate = document.getElementById("slate") as HTMLElement;
+const storybook = document.getElementById("storybook") as HTMLElement;
+const sbHeading = document.getElementById("sbHeading")!;
+const sbBody = document.getElementById("sbBody")!;
+const sbSig = document.getElementById("sbSig")!;
+
+interface GiftDto { recipientName: string; heading: string; paragraphs: string[]; signature: string; birthday: string }
 
 let W = 0, H = 0;
 function resize() {
@@ -69,6 +76,8 @@ function reset() {
   cancelAnimationFrame(bloomRaf);
   phase = "sigil"; strokes = []; curStroke = null; detected = null;
   sigilCenter = null; sigilScore = 0; sigilDiag = 0; prepared = null; blooming = false;
+  storybook.style.display = "none"; // back to the casting slate
+  slate.style.display = "flex";
   phaseLabel.textContent = "Draw the central sigil";
   hudGlyph.textContent = "·"; hudGlyph.style.color = "var(--c-soft)";
   hudName.textContent = "Awaiting sigil"; hudApp.textContent = "—";
@@ -128,8 +137,8 @@ async function handleSigil(stroke: Pt[]) {
   try { res = await invoke<SigilDto>("classify_sigil", { points: stroke }); }
   catch { return; }
   if (res.secret) {
-    showToast("A seal in no tome answers you…", "✶");
-    setTimeout(hide, 1300);
+    void invoke("mark_secret_found");
+    openStorybook();
     return;
   }
   if (!res.spell) {
@@ -323,6 +332,24 @@ function showToast(msg: string, icon: string) {
   toastTimer = window.setTimeout(() => { toast.style.display = "none"; }, 4200);
 }
 
+async function openStorybook() {
+  let gift: GiftDto | null = null;
+  try { gift = (await invoke<{ gift: GiftDto }>("get_settings")).gift; } catch { /* */ }
+  if (gift) {
+    sbHeading.textContent = gift.recipientName ? `For ${gift.recipientName}` : gift.heading;
+    sbBody.innerHTML = "";
+    for (const p of gift.paragraphs) {
+      const el = document.createElement("p");
+      el.style.margin = "0 0 14px";
+      el.textContent = p;
+      sbBody.appendChild(el);
+    }
+    sbSig.textContent = gift.signature;
+  }
+  slate.style.display = "none";
+  storybook.style.display = "block";
+}
+
 async function hide() {
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -332,6 +359,7 @@ async function hide() {
 
 document.getElementById("btnClear")!.addEventListener("click", reset);
 document.getElementById("btnDismiss")!.addEventListener("click", () => { reset(); hide(); });
+document.getElementById("sbClose")!.addEventListener("click", () => { reset(); hide(); });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") { reset(); hide(); } });
 
 // Clear the slate each time the window is summoned (regains focus).
