@@ -48,22 +48,42 @@ const elDate = document.getElementById("date")!;
 // RENDITIONS so big monitors pick it up. Listing only files that actually exist
 // means no request ever 404s; onerror is a final safety net back to the base.
 const BASE_ART = "/wallpaper.webp";
-const RENDITIONS: { minWidth: number; src: string }[] = [
-  // { minWidth: 2561, src: "/wallpaper@3440.webp" },
-  // { minWidth: 1921, src: "/wallpaper@1920.webp" },
+// Per-monitor renditions, picked by physical size. `minAspect` guards aspect-ratio
+// so a 16:9 4K monitor never grabs the 21:9 ultrawide art (object-fit:cover would
+// otherwise crop the frame). Each entry's file must exist in public/.
+const RENDITIONS: { minWidth: number; minAspect?: number; src: string }[] = [
+  // 3440x1440 ultrawide (21:9 ≈ 2.39): the framed scene with the parchment border
+  // extended left/right so nothing is cropped.
+  { minWidth: 3000, minAspect: 2.2, src: "/wallpaper-3440.jpg" },
 ];
-const physicalWidth = window.innerWidth * (window.devicePixelRatio || 1);
-const chosen = RENDITIONS
-  .filter((r) => physicalWidth >= r.minWidth)
-  .sort((a, b) => b.minWidth - a.minWidth)[0];
 // Set the error handler BEFORE assigning src so a failed load falls back to base.
+let curWallSrc = "";
 wall.onerror = () => {
   if (!wall.src.endsWith(BASE_ART)) {
     wall.onerror = null; // avoid loops if the base itself is missing
+    curWallSrc = BASE_ART;
     wall.src = BASE_ART;
   }
 };
-wall.src = chosen ? chosen.src : BASE_ART;
+// Choose the rendition from the CURRENT physical size. The wallpaper webview is
+// created at the config's default size and only sized to its monitor after attach,
+// so this must run again once the real size arrives (resize + delayed retries),
+// not just at module load — otherwise an ultrawide keeps the cover-cropped base.
+function pickWall() {
+  const pw = window.innerWidth * (window.devicePixelRatio || 1);
+  const ph = window.innerHeight * (window.devicePixelRatio || 1);
+  const aspect = pw / Math.max(1, ph);
+  const r = RENDITIONS
+    .filter((d) => pw >= d.minWidth && aspect >= (d.minAspect ?? 0))
+    .sort((a, b) => b.minWidth - a.minWidth)[0];
+  const want = r ? r.src : BASE_ART;
+  if (want !== curWallSrc) {
+    curWallSrc = want;
+    wall.src = want;
+  }
+}
+pickWall();
+[400, 1200, 2500].forEach((t) => setTimeout(pickWall, t));
 
 let pal = PAL[curMode];
 let uiScale = 1;
@@ -378,6 +398,7 @@ window.addEventListener("resize", () => {
   setUiScale();
   sizeAll();
   scheduleHitRects();
+  pickWall(); // the window was just sized to its monitor → re-pick the rendition
 });
 updateClock();
 setInterval(updateClock, 1000);

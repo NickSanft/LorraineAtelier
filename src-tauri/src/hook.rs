@@ -205,7 +205,7 @@ fn spawn_hook_thread(app: AppHandle) {
             }
         };
         let _guard = HookGuard(hook);
-        let _ = app.emit("log", "hook: installed (observe-only)");
+        let _ = app.emit("log", "hook: installed");
         // The low-level hook fires by posting to THIS thread, so it needs a pump.
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
