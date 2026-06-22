@@ -291,8 +291,9 @@ Phases are ordered so the **riskiest remaining unknown (explorer-restart recover
 **Exit criteria:** ✅ installs per-user without admin/UAC, launches to tray, autostart `.lnk` on the spaced install path survives reboot; themed icon + v1.0.0 baked into the final installer.
 **Effort: S**
 
-### Phase 10 — Pre-gift QA pass  ✅ TECHNICAL QA VERIFIED (2026-06-22; personalization content pending)
+### Phase 10 — Pre-gift QA pass  ✅ DONE (2026-06-22 — QA verified, personalized, final installer cut)
 **Goal:** the gift works on the recipient's machine, first try, on the special day.
+**Personalized + shipped 2026-06-22:** recipient **Lorraine** (storybook titles "For Lorraine"), birthday **07-25** (auto-bloom armed), Silver Eve **every weekend** (recurring Sat/Sun festival), **autostart on by default**, both fidelity passes shipped (crystal Petrification + time-stop; born-from-ink bird). Final per-user NSIS installer built: `src-tauri/target/release/bundle/nsis/Lorraine Atelier_1.0.0_x64-setup.exe` (4.3 MB). Dedication wording may still be tweaked on request → re-cut the installer if so.
 **Verified 2026-06-22 (dev rig):** recognizer parity + unit tests pass; birthday auto-bloom fires + surfaces the storybook on the date (year-guarded); 4 spell bindings correct + test-cast launches the apps; sigil draw (5 sigils + CW/CCW rings) recognizes correctly; Attune reacts + falls back gracefully; pause-on-fullscreen on by default; **explorer-restart recovery** (killed `explorer.exe` → app survived, same PID, watchdog re-attached the wallpaper under the new WorkerW); fractional-DPI OK; idle GPU/CPU fixed (see above). Gotcha found: `cargo test` rebuilds the debug exe WITHOUT `--features custom-protocol` → all windows show "localhost refused" until rebuilt with the flag. Remaining = the **personalization content** (below): real dedication + birthday date.
 **Deliverables:** a QA checklist run on the dev rig + (ideally) a clean second machine.
 **Key tasks:**
