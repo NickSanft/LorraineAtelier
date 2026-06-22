@@ -28,22 +28,22 @@ pub struct Gift {
     pub paragraphs: Vec<String>,
     pub signature: String,
     pub birthday: String,
-    pub silver_eve: String, // "MM-DD" for the Silver-Eve festival egg (empty = off)
+    pub silver_eve: String, // "weekends" (every Sat/Sun), "MM-DD" (annual), or empty = off
 }
 
 impl Default for Gift {
     fn default() -> Self {
         Self {
-            recipient_name: String::new(),
+            recipient_name: "Lorraine".into(),
             heading: "A Seal in No Tome".into(),
             paragraphs: vec![
-                "Some magic isn't drawn for power, but for the people we draw it for.".into(),
-                "You found the secret star — so here is the spell with no incantation: a small, glowing wish that you are seen, and treasured, and that the world is a little gentler for your being in it.".into(),
-                "Happy birthday. May your year be full of quiet wonders.".into(),
+                "In the Atelier, magic is never spoken — it is drawn, slowly and by hand, for the people we hold most dear. This whole small world was drawn for you, and it bears your name: the Lorraine Atelier.".into(),
+                "You found the secret star — the one seal written in no tome. It holds a spell that needs no incantation: that you are seen exactly as you are, loved beyond all measure, and that the world is warmer and brighter for your being in it.".into(),
+                "Happy birthday, Lorraine. May your year overflow with quiet wonders — and may you never forget how deeply treasured you are.".into(),
             ],
-            signature: "— with love".into(),
-            birthday: String::new(),
-            silver_eve: String::new(),
+            signature: "— with all my love".into(),
+            birthday: "07-25".into(),
+            silver_eve: "weekends".into(),
         }
     }
 }
@@ -78,7 +78,8 @@ pub struct Settings {
     pub gift: Gift,
     pub secret_found: bool,
     pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
-    pub last_silvereve_year: i32, // guard so Silver-Eve fires at most once/year
+    pub last_silvereve_year: i32, // guard so an annual Silver-Eve fires at most once/year
+    pub last_silvereve_day: String, // YYYY-MM-DD guard so a "weekends" Silver-Eve fires once/day
     pub discovered: HashMap<String, u32>, // element key → times cast (Tower of Tomes)
     pub first_run: bool, // show the one-time welcome until dismissed
     pub colorblind: bool, // swap element colors to a colorblind-safe palette
@@ -104,12 +105,13 @@ impl Default for Settings {
             secret_found: false,
             last_birthday_year: 0,
             last_silvereve_year: 0,
+            last_silvereve_day: String::new(),
             discovered: HashMap::new(),
             first_run: true,
             colorblind: false,
             buddy_sprite: String::new(),
             widget_layout: HashMap::new(),
-            run_at_startup: false, // opt-in; toggled in the control panel / tray
+            run_at_startup: true, // gift default: the atelier should greet her at every login
             frame_rate: 30,        // gentle default; lowest GPU/CPU
             primary_only: true,    // default: full scene on primary, static art elsewhere
             buddy_enabled: true,   // the brushbuddy roams by default
@@ -274,5 +276,10 @@ pub fn set_last_birthday_year(year: i32) {
 
 pub fn set_last_silvereve_year(year: i32) {
     store().lock().unwrap().last_silvereve_year = year;
+    save();
+}
+
+pub fn set_last_silvereve_day(day: String) {
+    store().lock().unwrap().last_silvereve_day = day;
     save();
 }

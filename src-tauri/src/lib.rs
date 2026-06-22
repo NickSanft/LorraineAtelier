@@ -505,10 +505,10 @@ fn surface_storybook(app: &AppHandle) {
 }
 
 #[cfg(windows)]
-fn local_ymd() -> (i32, u16, u16) {
+fn local_ymd() -> (i32, u16, u16, u16) {
     use windows::Win32::System::SystemInformation::GetLocalTime;
     let st = unsafe { GetLocalTime() };
-    (st.wYear as i32, st.wMonth, st.wDay)
+    (st.wYear as i32, st.wMonth, st.wDay, st.wDayOfWeek) // wDayOfWeek: 0=Sun..6=Sat
 }
 
 /// Surface the dedication once on the configured birthday (local time), guarded by
@@ -520,7 +520,7 @@ fn check_birthday(app: &AppHandle) {
     }
     #[cfg(windows)]
     {
-        let (year, m, d) = local_ymd();
+        let (year, m, d, _wd) = local_ymd();
         let today = format!("{m:02}-{d:02}");
         if today == gift.birthday && settings::get().last_birthday_year != year {
             settings::set_last_birthday_year(year);
@@ -539,10 +539,25 @@ fn check_birthday(app: &AppHandle) {
 #[cfg(windows)]
 fn check_silvereve(app: &AppHandle) {
     let eve = settings::get().gift.silver_eve;
-    if eve.trim().is_empty() {
+    let eve = eve.trim();
+    if eve.is_empty() {
         return;
     }
-    let (year, m, d) = local_ymd();
+    let (year, m, d, wd) = local_ymd();
+    // "weekends": a recurring festival every Sat/Sun, guarded per-day (wDayOfWeek
+    // 0=Sun, 6=Sat) so it fires once each weekend day rather than once per year.
+    if eve.eq_ignore_ascii_case("weekends") {
+        if wd == 0 || wd == 6 {
+            let today = format!("{year:04}-{m:02}-{d:02}");
+            if settings::get().last_silvereve_day != today {
+                settings::set_last_silvereve_day(today);
+                log(app, "silver-eve: the falling stars (weekend)");
+                let _ = app.emit("gift:festival", ());
+            }
+        }
+        return;
+    }
+    // Otherwise an annual "MM-DD" date, guarded once per year.
     let today = format!("{m:02}-{d:02}");
     if today == eve && settings::get().last_silvereve_year != year {
         settings::set_last_silvereve_year(year);
