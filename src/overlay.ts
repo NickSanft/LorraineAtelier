@@ -131,6 +131,8 @@ cast.addEventListener("pointerup", () => {
   const small = isSmallMark(stroke);
   if (prepared && small) { ignitePrepared(); return; }
   if (!prepared && small && detected?.spell?.key === "fire") { upgradeToLight(); return; }
+  // Wind ○ + a centre dot = the canon decorative "bird" sigil — a bird takes wing.
+  if (!prepared && small && detected?.spell?.key === "wind") { conjureBird(); return; }
   if (stroke.length < 4) return; // a stray short stroke that isn't a dot we handle
   strokes.push(stroke);
   handleRing(stroke);
@@ -169,6 +171,15 @@ function upgradeToLight() {
   detected.spell = LIGHT;
   phaseLabel.textContent = "Light gathers — now close the ring";
   showReading(LIGHT);
+}
+
+// Decorative sigil egg: conjure a magic bird (it flies across the wallpaper). Free
+// and cosmetic — no app, no ink; close the slate so the bird is seen.
+function conjureBird() {
+  blooming = true; // freeze input through the close
+  showToast("✦ A bird takes wing from the page.", "✦");
+  void invoke("conjure_bird");
+  setTimeout(() => hide(), 800);
 }
 
 async function handleRing(stroke: Pt[]) {

@@ -1127,6 +1127,13 @@ fn dismiss_welcome() -> String {
     "welcome dismissed".into()
 }
 
+/// Decorative "bird" sigil egg: broadcast so every wallpaper monitor flies a bird.
+#[tauri::command]
+fn conjure_bird(app: AppHandle) -> String {
+    let _ = app.emit("cast:bird", ());
+    "a bird takes wing".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1251,6 +1258,7 @@ pub fn run() {
             mark_secret_found,
             preview_storybook,
             dismiss_welcome,
+            conjure_bird,
             set_viz_source,
             viz_status,
             casting::classify_sigil,

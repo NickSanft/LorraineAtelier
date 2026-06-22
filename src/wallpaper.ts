@@ -329,6 +329,51 @@ function startBloom(m: CastFire) {
   bloomRaf = requestAnimationFrame(anim);
 }
 
+// ---- bird sigil egg: a sumi-ink bird glides across the wallpaper (Rust cast:bird).
+let birdRaf = 0;
+function drawBird(ctx: CanvasRenderingContext2D, x: number, y: number, dir: number, flap: number, s: number, alpha: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir * s, s);
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.strokeStyle = "rgba(18,14,26,.9)"; // inky body line
+  ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.shadowColor = pal.teal; ctx.shadowBlur = 9;
+  const wing = 13 + flap * 7; // wings rise/fall with the flap
+  ctx.beginPath();
+  ctx.moveTo(-19, 0);
+  ctx.quadraticCurveTo(-9, -wing, 0, -2);  // left wing
+  ctx.quadraticCurveTo(9, -wing, 19, 0);   // right wing
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+function startBird() {
+  const c = bloom as CV;
+  const ctx = c.getContext("2d")!;
+  const w = c._cssw || 0, h = c._cssh || 0;
+  if (!w || !h) return;
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const y0 = h * (0.18 + Math.random() * 0.28);
+  const s = Math.max(1, uiScale) * 1.2;
+  const dur = 5200;
+  const start = performance.now();
+  cancelAnimationFrame(birdRaf);
+  const anim = (now: number) => {
+    const p = (now - start) / dur;
+    ctx.clearRect(0, 0, w, h);
+    if (p >= 1) return; // gone
+    const x = dir > 0 ? -50 + p * (w + 100) : w + 50 - p * (w + 100);
+    const y = y0 + Math.sin(p * Math.PI * 3) * 24 * s - p * 50; // gentle glide, drifting up
+    const flap = Math.sin(now * 0.013);
+    const fade = Math.min(1, Math.sin(p * Math.PI) * 1.7); // fade in then out
+    drawBird(ctx, x, y, dir, flap, s, fade);
+    birdRaf = requestAnimationFrame(anim);
+  };
+  birdRaf = requestAnimationFrame(anim);
+}
+listen("cast:bird", () => startBird());
+
 listen<CastFire>("cast:fire", (e) => {
   const m = e.payload;
   updateDockDisplay(curMode, m.ink); // reflect spent ink in the dock gauge
