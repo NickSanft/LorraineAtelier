@@ -264,16 +264,18 @@ Phases are ordered so the **riskiest remaining unknown (explorer-restart recover
 
 **Effort: XL**
 
-### Phase 8 — Shell, first-run & startup wiring
+### Phase 8 — Shell, first-run & startup wiring  ✅ DONE (commit `0419c1a`; tray + hide-to-tray + welcome landed earlier)
 **Goal:** the app behaves as a polished tray utility from first launch.
 **Deliverables:** tray menu, run-at-startup, first-run welcome, startup sequencing, capabilities.
 **Key tasks:**
-- Tray menu (Day/Night, Pause/Resume, Inscribe, Settings, Quit); `main` close → hide to tray (default minimize-to-tray); reuse DivoraVoiceMod's hidden-window reveal-on-paint.
-- `tauri-plugin-autostart` (HKCU Run, no admin) behind the `runAtStartup` setting; start minimized to tray.
-- Startup sequence in `lib.rs`: `set_dpi_awareness()` before Builder → `setup()` loads `Settings`, builds tray, registers hotkey + hot-corner + shellhook window → `RunEvent::Ready` runs `host::ensure_all()` then spawns the 2 s watchdog and the audio service → `RunEvent::Exit` detaches + destroys hosts. If `vizSource=="attuned"`, attempt capture once; on failure silently demote.
-- Extend `capabilities/default.json`: `shell:allow-open`, store permissions, autostart, plus existing window/global-shortcut perms.
-**Exit criteria:** fresh launch → tray + wallpaper up, mono-shirazu welcome, run-at-startup toggle persists and takes effect on reboot.
+- Tray menu (Day/Night, Attune, Desktop-interactivity, Run-at-startup, Inscribe, Re-attach, Show, Quit); `main` close → hide to tray; **reveal-on-paint** — `main` is created `visible:false` and the control window shows itself on first paint via `should_show_main` (an autostart `--minimized` launch stays hidden in the tray, no window flash).
+- **Run-at-startup = a per-user Startup-folder shortcut** (`src/autostart.rs` via the `mslnk` crate), NOT `tauri-plugin-autostart`/an HKCU `Run` value. **Hard-won finding (2026-06-22):** the `Run`-key path that `tauri-plugin-autostart`/`auto-launch` writes (a) is **unquoted**, so the installed gift path (`%LOCALAPPDATA%\Lorraine Atelier\…`, has a space) truncates at the space and silently fails to launch, and (b) even when valid+quoted+enabled, it was **silently skipped at logon for this exe** on the dev box (no process, no WER), while sibling Run entries ran. A Startup-folder `.lnk` stores target+args as separate fields (immune to spaces) and launches reliably every logon — confirmed across reboots. Toggle in control panel + tray (default off; reconciled to the OS on launch by `sync_autostart`). Dropped the `tauri-plugin-autostart`/`auto-launch`/`winreg` deps. `.lnk` target = `current_exe()` so the installed build registers its install path automatically.
+- **Startup breadcrumb log** (`%APPDATA%\com.divora.lorraineatelier\startup.log`, bounded 64 KiB): CWD-independent run-start → settings → setup → Ready → complete → Exit trail, so a logon launch we can't watch live is diagnosable on the recipient's machine.
+- Startup sequence in `lib.rs`: `set_dpi_awareness()` before Builder → `setup()` loads `Settings`, builds tray, `sync_autostart()`, registers hotkey → `RunEvent::Ready` runs `ensure_attached()` then spawns the watchdog + buddy + birthday watch + mouse hook. (Audio capture-on-demand already wired in Phase 6.)
+- `capabilities/default.json`: window/global-shortcut perms (autostart needs none — the `.lnk`/registry work is native Rust, not an IPC plugin command).
+**Exit criteria:** ✅ fresh launch → tray + wallpaper up, mono-shirazu welcome; run-at-startup toggle persists and **takes effect on reboot** (verified: app boots to tray at logon via the shortcut).
 **Effort: M**
+**Remaining for the gift:** decide whether to default run-at-startup **on** for the installed build (a live wallpaper should survive reboots) — e.g. enable it from the welcome's "Begin ✦" or flip the default in the gift build (see Personalization checklist).
 
 ### Phase 9 — Packaging (NSIS per-user, one-off installer)
 **Goal:** a single installer the recipient runs once.
@@ -353,6 +355,7 @@ Everything ships generic except **one file the dev personalizes before building 
 - [ ] **The secret glyph (manual path to the message):** no edit needed — the pentacle (`classify` returns `secret` when `nC≥5 & gap<0.62`) sets `secretFound`, unlocks the Forbidden Page, and opens the storybook. Optionally verify by drawing a five-point star on the overlay slate.
 - [ ] **Silver Eve (optional seasonal):** set `gift.default.json → silverEve` to an optional `"MM-DD"` for the festival-lights egg.
 - [ ] **App icon:** replace the placeholder `src-tauri/icons/*` (32x32.png, 128x128.png, 128x128@2x.png, icon.ico, icon.png) with the themed Lorraine Atelier icon before the final build.
+- [ ] **Run-at-startup default:** the `run_at_startup` setting defaults **off** (dev hygiene). For the gift, a live wallpaper should survive reboots — either flip the default to `true` in `settings.rs` for the gift build, or enable it from the welcome's "Begin ✦" click. Mechanism is a per-user Startup-folder shortcut (no admin); recipient can always toggle it in the control panel / tray.
 - [ ] **Default sigil→app bindings:** confirm △Fire→Steam, ▽Water→Discord, ○Wind→Browser, □Earth→Files match the recipient's installed apps; adjust defaults in `store.rs` or leave for the recipient to edit in the control window's Spell Bindings panel. Use "Test cast" to validate on the target machine.
 - [ ] **(Optional) Live edit without rebuild:** the control UI's hidden "Atelier dedication" panel (reachable after `secretFound` or via a tray dev item) edits the same `gift` fields at runtime, and the JSON can be hand-edited before gifting.
 
