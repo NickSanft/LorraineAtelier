@@ -36,6 +36,11 @@ const glow = document.getElementById("glow")!;
 const ambient = document.getElementById("ambient") as HTMLCanvasElement;
 const viz = document.getElementById("viz") as HTMLCanvasElement;
 const bloom = document.getElementById("bloom") as HTMLCanvasElement;
+// Clock/seal decorative rings — rotated in JS (see tick) instead of infinite CSS
+// animations, which would keep the compositor presenting every vsync (high GPU).
+const ring1 = document.getElementById("ring1");
+const ring2 = document.getElementById("ring2");
+const ring3 = document.getElementById("ring3");
 const elWeekday = document.getElementById("weekday")!;
 const elTime = document.getElementById("time")!;
 const elAmpm = document.getElementById("ampm")!;
@@ -293,6 +298,7 @@ function applyBuddySprite(src?: string) {
   }
 }
 listen<string>("settings:buddySprite", (e) => applyBuddySprite(e.payload));
+listen<boolean>("settings:buddyenabled", (e) => { if (buddyEl) buddyEl.style.display = e.payload ? "" : "none"; });
 
 // Primary monitor shows the full widgets (clock + seal + top strip + dock);
 // secondary monitors stay calm — just art, ambient motes, glow, and the passing
@@ -307,6 +313,7 @@ function applyPrimary(primary: boolean) {
   if (dockEl) dockEl.style.display = primary ? "flex" : "none";
   scheduleHitRects(); // dock appeared/disappeared → republish (or clear) hit-rects
   scheduleSizes(); // widgets shown/hidden → re-report sizes to the layout preview
+  updateLoopState(); // a secondary learned its role → may go static (primary-only mode)
 }
 
 // ---- taskbar-aware safe area ----
@@ -340,6 +347,7 @@ listen<BuddyMsg>("buddy", (e) => {
   applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
   if (!buddyEl) return;
   buddyEl.style.opacity = m.visible ? "1" : "0";
+  if (!m.visible) return; // hidden (off its monitor, or buddy disabled): skip transform → no damage
   // While held, the buddy lifts (scales up) and gains a warm glow — the "picked up" cue.
   const lift = m.held ? 1.16 : 1;
   buddyEl.style.transform =
@@ -524,27 +532,72 @@ function updateClock() {
 
 let lastTs = 0;
 let glowVal = 0;
-let lastDraw = 0;
-// Ambient render cap (~30 fps). The seal drifts slowly and the motes are gentle,
-// so the uncapped rAF loop just burned CPU at the monitor's refresh rate (60/120/
-// 144 Hz) — ~1.7 cores on the primary for no visible gain. 30 fps looks identical
-// and roughly halves idle CPU. All motion is dt-based, so cadence is unchanged;
-// transient casting/bloom effects keep their own short-lived loops.
-const FRAME_MS = 1000 / 30;
-function tick(ts: number) {
-  requestAnimationFrame(tick);
-  if (ts - lastDraw < FRAME_MS - 1) return; // throttle the heavy canvas work to ~30 fps
-  const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.016;
+let frameRate = 30; // wallpaper render cap (fps); 0 = monitor refresh rate
+let primaryOnly = true; // when true, only the primary monitor animates; secondaries stay static (~0 GPU)
+let loopGen = 0; // bumped on framerate/loop change so the old loop self-cancels
+let loopRunning = false;
+// Drive the ambient loop with setTimeout, NOT requestAnimationFrame. An active rAF
+// loop keeps Chromium's compositor in continuous "animating" mode, so it PRESENTS
+// every vsync (e.g. 175 Hz) even though we only redraw at 30 Hz — confirmed via
+// PresentMon as the dominant idle GPU cost (3 swapchains × ~175 fps). With a
+// setTimeout loop the page damages only at our ~30 Hz draw, so the compositor
+// presents ~30/s. Motion is dt-based, so cadence is unchanged. (Casting/bloom keep
+// their own short-lived rAF loops — fine, they're transient.)
+function drawFrame(ts: number) {
+  const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.033;
   lastTs = ts;
-  lastDraw = ts;
   const b = currentBands(ts); // generative or real (attuned) audio
   drawAmbientFrame(ts, b);
   drawVizFrame(ts, b, dt, takeBeat()); // advances sealState (smoothed bands)
+  // Rotate the decorative clock/seal rings here (was infinite CSS animation). On
+  // secondary monitors the clock/seal are hidden, so these writes cause no damage.
+  if (ring1) ring1.style.transform = `rotate(${(ts / 333.333) % 360}deg)`; // 120s cw
+  if (ring2) ring2.style.transform = `rotate(${(-ts / 222.222) % 360}deg)`; // 80s ccw
+  if (ring3) ring3.style.transform = `rotate(${(ts / 555.556) % 360}deg)`; // 200s cw
   // Glow follows the seal's already-enveloped bass, then eases again so brightness
   // shifts gradually — no rapid flicker (photosensitivity-friendly).
   const glowTarget = parseFloat(glowOpacity({ bass: sealState.bass, mid: sealState.mid, high: sealState.high }, pal));
   glowVal += (glowTarget - glowVal) * 0.07;
   glow.style.opacity = glowVal.toFixed(3);
+}
+
+// Render loop. At 30/60 fps we drive with setTimeout, NOT requestAnimationFrame: an
+// active rAF loop keeps the compositor presenting every vsync regardless of our draw
+// rate (the dominant idle GPU cost, confirmed via PresentMon). setTimeout damages
+// only at the cap, so the compositor presents at the cap. frameRate 0 = "monitor"
+// uses rAF (full refresh; highest GPU, opt-in). loopGen cancels the old loop on a
+// live framerate change.
+function startLoop() {
+  loopGen++;
+  const gen = loopGen;
+  loopRunning = true;
+  const step = () => {
+    if (gen !== loopGen) return; // superseded by a newer loop
+    drawFrame(performance.now());
+    if (frameRate <= 0) requestAnimationFrame(step);
+    else setTimeout(step, 1000 / frameRate);
+  };
+  step();
+}
+function stopLoop() {
+  loopGen++; // any in-flight step sees the gen change and stops
+  loopRunning = false;
+}
+// A monitor animates unless it's a KNOWN secondary while "primary only" is on. A
+// static (no-damage) webview produces ~0 compositor presents → ~0 GPU, while still
+// showing the static art (the wall image + tint). No restart / no OS-wallpaper change.
+function updateLoopState() {
+  const animate = !primaryOnly || isPrimary !== false;
+  if (animate) {
+    if (!loopRunning) startLoop();
+  } else if (loopRunning) {
+    stopLoop();
+    glow.style.opacity = "0"; // drop the frozen bloom on a now-static secondary
+  }
+}
+function setFrameRate(fps: number) {
+  frameRate = Math.max(0, fps | 0);
+  if (loopRunning) startLoop(); // retune live (no-op while static)
 }
 
 // Widget size scales with monitor height so widgets stay proportional across
@@ -567,9 +620,11 @@ function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos> }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
+listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
+listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; updateLoopState(); });
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 // A new cast/secret updates the inscribed count.
 listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => updateGlyphCount(s?.discovered)).catch(() => {}); });
@@ -584,4 +639,4 @@ window.addEventListener("resize", () => {
 });
 updateClock();
 setInterval(updateClock, 1000);
-requestAnimationFrame(tick);
+startLoop(); // begins at the default 30 fps; setFrameRate retunes it once settings load

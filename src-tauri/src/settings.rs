@@ -85,6 +85,9 @@ pub struct Settings {
     pub buddy_sprite: String, // custom brushbuddy image (path/URL); empty = built-in sprite
     pub widget_layout: HashMap<String, WidgetPos>, // per-widget placement override
     pub run_at_startup: bool, // launch the atelier at login (HKCU Run key)
+    pub frame_rate: u32, // wallpaper render cap in fps; 0 = monitor refresh rate
+    pub primary_only: bool, // animate only the primary monitor; secondaries get the static OS wallpaper
+    pub buddy_enabled: bool, // show + animate the brushbuddy
 }
 
 impl Default for Settings {
@@ -107,6 +110,9 @@ impl Default for Settings {
             buddy_sprite: String::new(),
             widget_layout: HashMap::new(),
             run_at_startup: false, // opt-in; toggled in the control panel / tray
+            frame_rate: 30,        // gentle default; lowest GPU/CPU
+            primary_only: true,    // default: full scene on primary, static art elsewhere
+            buddy_enabled: true,   // the brushbuddy roams by default
         }
     }
 }
@@ -224,6 +230,21 @@ pub fn set_buddy_sprite(src: String) {
 
 pub fn set_run_at_startup(v: bool) {
     store().lock().unwrap().run_at_startup = v;
+    save();
+}
+
+pub fn set_frame_rate(v: u32) {
+    store().lock().unwrap().frame_rate = v;
+    save();
+}
+
+pub fn set_primary_only(v: bool) {
+    store().lock().unwrap().primary_only = v;
+    save();
+}
+
+pub fn set_buddy_enabled(v: bool) {
+    store().lock().unwrap().buddy_enabled = v;
     save();
 }
 

@@ -51,7 +51,7 @@
       <!-- CLOCK MAGIC CIRCLE (display only) -->
       <div id="clock" style="position:absolute;left:46px;top:84px;width:286px;height:286px;z-index:20;filter:drop-shadow(0 6px 22px rgba(8,6,14,.4));transform:scale(var(--ui-scale,1));transform-origin:top left">
         <div style="position:absolute;inset:14px;border-radius:50%;background:radial-gradient(circle, var(--c-halo) 44%, rgba(0,0,0,0) 80%);backdrop-filter:blur(2px)"></div>
-        <svg viewBox="0 0 300 300" style="position:absolute;inset:0;width:100%;height:100%;color:var(--c-gold);animation:wha-spin 120s linear infinite">
+        <svg id="ring1" viewBox="0 0 300 300" style="position:absolute;inset:0;width:100%;height:100%;color:var(--c-gold);will-change:transform">
           <circle cx="150" cy="150" r="142" fill="none" stroke="currentColor" stroke-width="1" opacity=".55" />
           <circle cx="150" cy="150" r="142" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="1.6 13.2" opacity=".7" />
           <circle cx="150" cy="150" r="120" fill="none" stroke="currentColor" stroke-width=".8" opacity=".4" />
@@ -59,7 +59,7 @@
             <text x="150" y="40">△</text><text x="262" y="155">□</text><text x="150" y="272">▽</text><text x="42" y="155">○</text>
           </g>
         </svg>
-        <svg viewBox="0 0 300 300" style="position:absolute;inset:22px;width:calc(100% - 44px);height:calc(100% - 44px);color:var(--c-gold);animation:wha-spin-rev 80s linear infinite">
+        <svg id="ring2" viewBox="0 0 300 300" style="position:absolute;inset:22px;width:calc(100% - 44px);height:calc(100% - 44px);color:var(--c-gold);will-change:transform">
           <circle cx="150" cy="150" r="126" fill="none" stroke="currentColor" stroke-width="1" opacity=".4" />
           <circle cx="150" cy="150" r="126" fill="none" stroke="currentColor" stroke-width="6" stroke-dasharray=".5 30.5" stroke-linecap="round" opacity=".55" />
           <g stroke="currentColor" stroke-width=".7" opacity=".3">
@@ -80,7 +80,7 @@
       <!-- VISUALIZER SEAL (display only; Attune pill is non-interactive on the wallpaper) -->
       <div id="seal" style="position:absolute;left:70px;bottom:150px;width:300px;height:300px;z-index:20;transform:scale(var(--ui-scale,1));transform-origin:bottom left">
         <div style="position:absolute;inset:6px;border-radius:50%;background:radial-gradient(circle, var(--c-halo), rgba(0,0,0,0) 68%);backdrop-filter:blur(2px)"></div>
-        <svg viewBox="0 0 300 300" style="position:absolute;inset:-10px;width:calc(100% + 20px);height:calc(100% + 20px);color:var(--c-teal);opacity:.4;animation:wha-spin 200s linear infinite">
+        <svg id="ring3" viewBox="0 0 300 300" style="position:absolute;inset:-10px;width:calc(100% + 20px);height:calc(100% + 20px);color:var(--c-teal);opacity:.4;will-change:transform">
           <circle cx="150" cy="150" r="146" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="1 9" />
         </svg>
         <canvas id="viz" style="position:absolute;inset:0;width:100%;height:100%"></canvas>

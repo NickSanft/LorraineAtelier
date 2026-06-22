@@ -78,6 +78,18 @@
         <button id="preview">Preview dedication</button>
         <button id="previewSilver">Preview Silver Eve</button>
       </div>
+      <div class="toggles" style="align-items:center">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#efe6d2;font-family:'Cinzel',serif;letter-spacing:.04em">Framerate
+          <select id="frameRate" style="background:#241c34;color:#efe6d2;border:1px solid var(--edge);border-radius:8px;padding:8px 10px;font:11px 'Cinzel',serif;cursor:pointer">
+            <option value="30">30 FPS</option>
+            <option value="60">60 FPS</option>
+            <option value="0">Monitor</option>
+          </select>
+        </label>
+        <button id="primaryOnly">Effects: primary only</button>
+        <button id="buddyEnabled">Brushbuddy: on</button>
+      </div>
+      <div class="hint">Lower framerate &amp; "primary only" reduce GPU/CPU. "Primary only" shows the live scene on your main monitor and the static art on the others.</div>
     </div>
 
     <!-- Spell Bindings panel (populated by control.ts) -->

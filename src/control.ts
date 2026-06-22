@@ -13,6 +13,9 @@ const pauseBtn = document.getElementById("pause") as HTMLButtonElement;
 const interactBtn = document.getElementById("interact") as HTMLButtonElement;
 const colorblindBtn = document.getElementById("colorblind") as HTMLButtonElement;
 const startupBtn = document.getElementById("startup") as HTMLButtonElement;
+const frameRateSel = document.getElementById("frameRate") as HTMLSelectElement;
+const primaryOnlyBtn = document.getElementById("primaryOnly") as HTMLButtonElement;
+const buddyEnabledBtn = document.getElementById("buddyEnabled") as HTMLButtonElement;
 const bindingsEl = document.getElementById("bindings")!;
 const tomesEl = document.getElementById("tomes")!;
 const tomesHintEl = document.getElementById("tomesHint")!;
@@ -32,6 +35,8 @@ let pauseOn = false;
 let interactOn = false;
 let colorblindOn = false;
 let startupOn = false;
+let primaryOnlyOn = true;
+let buddyEnabledOn = true;
 
 function renderMode() {
   modeBtn.textContent = mode === "night" ? "☾ Night" : "☀ Day";
@@ -58,6 +63,14 @@ function renderStartup() {
   startupBtn.textContent = `Run at startup: ${startupOn ? "on" : "off"}`;
   startupBtn.classList.toggle("on", startupOn);
 }
+function renderPrimaryOnly() {
+  primaryOnlyBtn.textContent = `Effects: ${primaryOnlyOn ? "primary only" : "all monitors"}`;
+  primaryOnlyBtn.classList.toggle("on", !primaryOnlyOn); // highlight the richer (all-monitors) mode
+}
+function renderBuddyEnabled() {
+  buddyEnabledBtn.textContent = `Brushbuddy: ${buddyEnabledOn ? "on" : "off"}`;
+  buddyEnabledBtn.classList.toggle("on", buddyEnabledOn);
+}
 
 interface SettingsDto {
   mode: string;
@@ -69,6 +82,9 @@ interface SettingsDto {
   firstRun: boolean;
   colorblind: boolean;
   runAtStartup: boolean;
+  frameRate: number;
+  primaryOnly: boolean;
+  buddyEnabled: boolean;
   buddySprite: string;
   widgetLayout: Record<string, { x: number; y: number; scale: number; vertical?: boolean }>;
 }
@@ -170,6 +186,9 @@ async function main() {
     interactOn = !!s.desktopInteractive;
     colorblindOn = !!s.colorblind;
     startupOn = !!s.runAtStartup;
+    primaryOnlyOn = s.primaryOnly !== false; // default true
+    buddyEnabledOn = s.buddyEnabled !== false; // default true
+    frameRateSel.value = String(s.frameRate ?? 30);
     buildBindings(s.mappings || {});
     buildTomes(s);
     if (s.firstRun) {
@@ -184,7 +203,7 @@ async function main() {
     append("get_settings ✗ " + e);
   }
   try { attuned = !!(await invoke<boolean>("viz_status")); } catch { /* */ }
-  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup();
+  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup(); renderPrimaryOnly(); renderBuddyEnabled();
 
   // Flip via the authoritative Rust toggle; our label updates from the
   // `settings:mode` broadcast below (so it can't desync from the real state).
@@ -214,6 +233,23 @@ async function main() {
     renderStartup();
     await invoke("set_run_at_startup", { enabled: startupOn });
     append(`run at startup → ${startupOn ? "on" : "off"}`);
+  });
+  frameRateSel.addEventListener("change", async () => {
+    const fps = parseInt(frameRateSel.value, 10) || 0;
+    await invoke("set_frame_rate", { fps });
+    append(`framerate → ${frameRateSel.options[frameRateSel.selectedIndex].text}`);
+  });
+  primaryOnlyBtn.addEventListener("click", async () => {
+    primaryOnlyOn = !primaryOnlyOn;
+    renderPrimaryOnly();
+    await invoke("set_primary_only", { enabled: primaryOnlyOn });
+    append(`effects → ${primaryOnlyOn ? "primary only" : "all monitors"}`);
+  });
+  buddyEnabledBtn.addEventListener("click", async () => {
+    buddyEnabledOn = !buddyEnabledOn;
+    renderBuddyEnabled();
+    await invoke("set_buddy_enabled", { enabled: buddyEnabledOn });
+    append(`brushbuddy → ${buddyEnabledOn ? "on" : "off"}`);
   });
 
   document.getElementById("resetBindings")!.addEventListener("click", async () => {

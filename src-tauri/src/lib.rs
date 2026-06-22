@@ -763,6 +763,10 @@ fn spawn_buddy(app: AppHandle) {
         // stays where you put it (and keeps that height across monitor seams).
         let mut walk_above = GROUND;
         let mut was_dragging = false;
+        // In "primary only" mode the buddy stays on the primary and we stream its
+        // position only there, so secondaries produce no damage and stay static.
+        let mut last_owner: Option<usize> = None;
+        let mut last_buddy_enabled: Option<bool> = None;
         use std::sync::atomic::Ordering::Relaxed;
 
         loop {
@@ -774,6 +778,10 @@ fn spawn_buddy(app: AppHandle) {
                 started = false;
                 continue;
             }
+            let s = settings::get();
+            let primary_only = s.primary_only;
+            let buddy_enabled = s.buddy_enabled;
+            let prim = mons.iter().position(|m| m.primary).unwrap_or(0);
 
             if !started {
                 // Restore the dropped position if the buddy was ever placed; else
@@ -854,8 +862,11 @@ fn spawn_buddy(app: AppHandle) {
                         } else {
                             rest = rng.range(18.0, 70.0) as i32; // brief pause
                         }
-                        // 45% of the time aim for a DIFFERENT monitor → cross the seam.
-                        let tgt = if n > 1 && rng.unit() < 0.45 {
+                        // Primary-only: never leave the primary (secondaries stay static).
+                        // Otherwise 45% of the time aim for a DIFFERENT monitor → cross the seam.
+                        let tgt = if primary_only {
+                            mons[prim]
+                        } else if n > 1 && rng.unit() < 0.45 {
                             let mut k = (rng.unit() * n as f64) as usize % n;
                             if k == owner {
                                 k = (owner + 1) % n;
@@ -886,7 +897,7 @@ fn spawn_buddy(app: AppHandle) {
             let scale = (om.height as f64 / 960.0).clamp(1.0, 2.2);
             buddy::HW.store((24.0 * scale).round() as i64, Relaxed);
             buddy::HH.store((21.0 * scale).round() as i64, Relaxed);
-            buddy::VISIBLE.store(true, Relaxed);
+            buddy::VISIBLE.store(buddy_enabled, Relaxed);
 
             // Eyes: closed while napping; otherwise the occasional blink.
             let eye_target = if napping {
@@ -905,14 +916,25 @@ fn spawn_buddy(app: AppHandle) {
             let bob_off = if dragging || rest != 0 { 0.0 } else { bob.sin() * 1.6 };
 
             let labels = slot_labels().lock().unwrap().clone();
+            // Per-frame stream goes to every monitor only when the buddy is enabled AND
+            // roaming all monitors. Otherwise (primary-only, or buddy off) we emit to all
+            // monitors just on a structural change — owner moved, or the buddy was
+            // toggled — so they learn primary/insets and show/hide the buddy; and we
+            // stream per-frame to the owner only while the buddy is enabled.
+            let structural = Some(owner) != last_owner || Some(buddy_enabled) != last_buddy_enabled;
+            let emit_all = (buddy_enabled && !primary_only) || structural;
             for i in 0..n {
+                let send = if emit_all { true } else if i == owner { buddy_enabled } else { false };
+                if !send {
+                    continue;
+                }
                 let Some(label) = labels.get(i) else { continue };
                 let m = mons[i];
                 let msg = BuddyMsg {
                     label: label.clone(),
                     x: x - m.x as f64,
                     y: y - m.y as f64 + bob_off,
-                    visible: i == owner,
+                    visible: buddy_enabled && i == owner,
                     flip,
                     eye,
                     primary: m.primary,
@@ -924,6 +946,8 @@ fn spawn_buddy(app: AppHandle) {
                 };
                 let _ = app.emit_to(label.as_str(), "buddy", msg);
             }
+            last_owner = Some(owner);
+            last_buddy_enabled = Some(buddy_enabled);
         }
     });
 }
@@ -1153,6 +1177,35 @@ fn set_run_at_startup(app: AppHandle, enabled: bool) -> String {
 #[tauri::command]
 fn should_show_main() -> bool {
     settings::get().first_run || !launched_minimized()
+}
+
+/// Set the wallpaper render cap (fps; 0 = monitor refresh). Persisted + broadcast so
+/// every wallpaper window retunes its loop live.
+#[tauri::command]
+fn set_frame_rate(app: AppHandle, fps: u32) -> String {
+    settings::set_frame_rate(fps);
+    let _ = app.emit("settings:framerate", fps);
+    format!("frame_rate={fps}")
+}
+
+/// Toggle "primary only" — when on, only the primary monitor runs the animated
+/// scene; secondary monitors freeze to static art (~0 GPU) and the buddy stays on
+/// the primary. Applied live (no restart): the broadcast retunes the wallpaper
+/// windows and the buddy thread reads the setting each tick.
+#[tauri::command]
+fn set_primary_only(app: AppHandle, enabled: bool) -> String {
+    settings::set_primary_only(enabled);
+    let _ = app.emit("settings:primaryonly", enabled);
+    format!("primary_only={enabled}")
+}
+
+/// Toggle the brushbuddy. When off, the buddy thread stops streaming per-frame
+/// positions (no damage) and the wallpaper hides it. Applied live.
+#[tauri::command]
+fn set_buddy_enabled(app: AppHandle, enabled: bool) -> String {
+    settings::set_buddy_enabled(enabled);
+    let _ = app.emit("settings:buddyenabled", enabled);
+    format!("buddy_enabled={enabled}")
 }
 
 /// Set a custom brushbuddy sprite (a file path or URL; empty restores the built-in).
@@ -1428,6 +1481,9 @@ pub fn run() {
             set_colorblind,
             set_run_at_startup,
             should_show_main,
+            set_frame_rate,
+            set_primary_only,
+            set_buddy_enabled,
             set_buddy_sprite,
             set_widget_layout,
             reset_widget_layout,
