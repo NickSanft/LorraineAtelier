@@ -92,7 +92,7 @@ impl Default for Settings {
         Self {
             mode: "night".into(),
             mappings: default_mappings(),
-            pause_on_fullscreen: false,
+            pause_on_fullscreen: true, // gift default: don't animate behind fullscreen games/videos
             desktop_interactive: true, // on by default for the gift; installs the mouse hook
             buddy_x: 0.0,
             buddy_y: 0.0,

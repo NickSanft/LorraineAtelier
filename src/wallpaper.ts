@@ -524,9 +524,19 @@ function updateClock() {
 
 let lastTs = 0;
 let glowVal = 0;
+let lastDraw = 0;
+// Ambient render cap (~30 fps). The seal drifts slowly and the motes are gentle,
+// so the uncapped rAF loop just burned CPU at the monitor's refresh rate (60/120/
+// 144 Hz) — ~1.7 cores on the primary for no visible gain. 30 fps looks identical
+// and roughly halves idle CPU. All motion is dt-based, so cadence is unchanged;
+// transient casting/bloom effects keep their own short-lived loops.
+const FRAME_MS = 1000 / 30;
 function tick(ts: number) {
+  requestAnimationFrame(tick);
+  if (ts - lastDraw < FRAME_MS - 1) return; // throttle the heavy canvas work to ~30 fps
   const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.016;
   lastTs = ts;
+  lastDraw = ts;
   const b = currentBands(ts); // generative or real (attuned) audio
   drawAmbientFrame(ts, b);
   drawVizFrame(ts, b, dt, takeBeat()); // advances sealState (smoothed bands)
@@ -535,7 +545,6 @@ function tick(ts: number) {
   const glowTarget = parseFloat(glowOpacity({ bass: sealState.bass, mid: sealState.mid, high: sealState.high }, pal));
   glowVal += (glowTarget - glowVal) * 0.07;
   glow.style.opacity = glowVal.toFixed(3);
-  requestAnimationFrame(tick);
 }
 
 // Widget size scales with monitor height so widgets stay proportional across
