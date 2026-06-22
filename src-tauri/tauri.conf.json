@@ -19,7 +19,7 @@
         "height": 460,
         "resizable": true,
         "decorations": true,
-        "visible": true,
+        "visible": false,
         "center": true,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion"
       },

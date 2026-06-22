@@ -12,6 +12,7 @@ const attuneBtn = document.getElementById("attune") as HTMLButtonElement;
 const pauseBtn = document.getElementById("pause") as HTMLButtonElement;
 const interactBtn = document.getElementById("interact") as HTMLButtonElement;
 const colorblindBtn = document.getElementById("colorblind") as HTMLButtonElement;
+const startupBtn = document.getElementById("startup") as HTMLButtonElement;
 const bindingsEl = document.getElementById("bindings")!;
 const tomesEl = document.getElementById("tomes")!;
 const tomesHintEl = document.getElementById("tomesHint")!;
@@ -30,6 +31,7 @@ let attuned = false;
 let pauseOn = false;
 let interactOn = false;
 let colorblindOn = false;
+let startupOn = false;
 
 function renderMode() {
   modeBtn.textContent = mode === "night" ? "☾ Night" : "☀ Day";
@@ -52,6 +54,10 @@ function renderColorblind() {
   colorblindBtn.classList.toggle("on", colorblindOn);
   document.body.classList.toggle("cb", colorblindOn);
 }
+function renderStartup() {
+  startupBtn.textContent = `Run at startup: ${startupOn ? "on" : "off"}`;
+  startupBtn.classList.toggle("on", startupOn);
+}
 
 interface SettingsDto {
   mode: string;
@@ -62,6 +68,7 @@ interface SettingsDto {
   secretFound: boolean;
   firstRun: boolean;
   colorblind: boolean;
+  runAtStartup: boolean;
   buddySprite: string;
   widgetLayout: Record<string, { x: number; y: number; scale: number; vertical?: boolean }>;
 }
@@ -69,9 +76,11 @@ interface SettingsDto {
 async function main() {
   let core: typeof import("@tauri-apps/api/core");
   let event: typeof import("@tauri-apps/api/event");
+  let win: typeof import("@tauri-apps/api/window");
   try {
     core = await import("@tauri-apps/api/core");
     event = await import("@tauri-apps/api/event");
+    win = await import("@tauri-apps/api/window");
   } catch {
     append("(running outside Tauri — controls are inert)");
     return;
@@ -160,6 +169,7 @@ async function main() {
     pauseOn = !!s.pauseOnFullscreen;
     interactOn = !!s.desktopInteractive;
     colorblindOn = !!s.colorblind;
+    startupOn = !!s.runAtStartup;
     buildBindings(s.mappings || {});
     buildTomes(s);
     if (s.firstRun) {
@@ -174,7 +184,7 @@ async function main() {
     append("get_settings ✗ " + e);
   }
   try { attuned = !!(await invoke<boolean>("viz_status")); } catch { /* */ }
-  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind();
+  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup();
 
   // Flip via the authoritative Rust toggle; our label updates from the
   // `settings:mode` broadcast below (so it can't desync from the real state).
@@ -198,6 +208,12 @@ async function main() {
     colorblindOn = !colorblindOn;
     renderColorblind();
     await invoke("set_colorblind", { enabled: colorblindOn });
+  });
+  startupBtn.addEventListener("click", async () => {
+    startupOn = !startupOn;
+    renderStartup();
+    await invoke("set_run_at_startup", { enabled: startupOn });
+    append(`run at startup → ${startupOn ? "on" : "off"}`);
   });
 
   document.getElementById("resetBindings")!.addEventListener("click", async () => {
@@ -320,6 +336,7 @@ async function main() {
   await event.listen<string>("settings:mode", (e) => { mode = e.payload === "day" ? "day" : "night"; renderMode(); });
   await event.listen<boolean>("settings:interactive", (e) => { interactOn = !!e.payload; renderInteract(); });
   await event.listen<boolean>("settings:colorblind", (e) => { colorblindOn = !!e.payload; renderColorblind(); });
+  await event.listen<boolean>("settings:runatstartup", (e) => { startupOn = !!e.payload; renderStartup(); });
   await event.listen<{ attuned: boolean }>("viz:source-changed", (e) => { attuned = !!e.payload.attuned; renderAttune(); });
   // Tower of Tomes: refresh on a new cast / secret-found; surface it on the dock click.
   await event.listen("tomes:changed", () => { void refreshTomes(); });
@@ -330,6 +347,17 @@ async function main() {
   });
   await event.listen<string>("log", (e) => append(e.payload));
   append("control ready");
+
+  // Reveal-on-paint: the window is created hidden (so an autostart `--minimized`
+  // launch boots silently to the tray). Now that every panel is built, show it
+  // unless this launch should stay hidden.
+  try {
+    if (await invoke<boolean>("should_show_main")) {
+      const w = win.getCurrentWindow();
+      await w.show();
+      await w.setFocus();
+    }
+  } catch { /* */ }
 }
 
 main();

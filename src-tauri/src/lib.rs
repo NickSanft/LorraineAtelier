@@ -23,9 +23,53 @@ mod audio;
 /// Persisted settings (day/night mode, spell bindings, pause) for the control UI.
 mod settings;
 
+/// Run-at-startup: we own the HKCU Run key write (quoted path) rather than the
+/// auto-launch crate, which writes it unquoted and breaks on the install path's space.
+mod autostart;
+
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+
+/// True when this process was launched at login (the autostart Run key appends
+/// `--minimized`). Such launches boot straight to the tray instead of showing
+/// the control window.
+fn launched_minimized() -> bool {
+    std::env::args().any(|a| a == "--minimized")
+}
+
+/// Apply the persisted `run_at_startup` preference to the OS Run key. The setting
+/// is the source of truth, so a manually-removed Run key (or a fresh install) is
+/// brought back into line. Only acts when they disagree.
+fn sync_autostart() {
+    let want = settings::get().run_at_startup;
+    if autostart::is_enabled() != want {
+        let _ = if want { autostart::enable() } else { autostart::disable() };
+    }
+}
+
+/// Append a breadcrumb to the CWD-independent startup log
+/// (`%APPDATA%\com.divora.lorraineatelier\startup.log`). A logon launch can't be
+/// watched live, so this trail shows how far startup got before any silent exit
+/// (e.g. a non-fatal WebView2 failure that hides the only window and tears down).
+fn log_startup(msg: &str) {
+    let Some(appdata) = std::env::var_os("APPDATA") else { return };
+    let dir = std::path::PathBuf::from(appdata).join("com.divora.lorraineatelier");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("startup.log");
+    // Keep it bounded — start fresh once it grows past 64 KiB.
+    if std::fs::metadata(&path).map(|m| m.len() > 64 * 1024).unwrap_or(false) {
+        let _ = std::fs::remove_file(&path);
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{secs} {msg}");
+    }
+}
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// Number of wallpaper windows declared in tauri.conf.json (labels
@@ -1089,6 +1133,28 @@ fn set_colorblind(app: AppHandle, enabled: bool) -> String {
     format!("colorblind={enabled}")
 }
 
+/// Toggle launching the atelier at login. Writes the per-user HKCU Run key via
+/// the autostart plugin and persists the setting; broadcast so the tray/control
+/// labels stay in sync.
+#[tauri::command]
+fn set_run_at_startup(app: AppHandle, enabled: bool) -> String {
+    settings::set_run_at_startup(enabled);
+    let r = if enabled { autostart::enable() } else { autostart::disable() };
+    let _ = app.emit("settings:runatstartup", enabled);
+    match r {
+        Ok(()) => format!("run_at_startup={enabled}"),
+        Err(e) => format!("run_at_startup={enabled} (registry error: {e})"),
+    }
+}
+
+/// Whether the control window should reveal itself on first paint: always on a
+/// normal (manual) launch and on first run, but never on an autostart launch
+/// (`--minimized`), which boots silently to the tray.
+#[tauri::command]
+fn should_show_main() -> bool {
+    settings::get().first_run || !launched_minimized()
+}
+
 /// Set a custom brushbuddy sprite (a file path or URL; empty restores the built-in).
 /// Persisted + broadcast so every wallpaper swaps the sprite live.
 #[tauri::command]
@@ -1236,11 +1302,15 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let mode = MenuItem::with_id(app, "mode", "Day / Night (toggle)", true, None::<&str>)?;
     let interact =
         MenuItem::with_id(app, "interact", "Desktop interactivity (toggle)", true, None::<&str>)?;
+    let startup =
+        MenuItem::with_id(app, "startup", "Run at startup (toggle)", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show control", true, None::<&str>)?;
     let reattach = MenuItem::with_id(app, "reattach", "Re-attach wallpaper", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu =
-        Menu::with_items(app, &[&inscribe, &attune, &mode, &interact, &show, &reattach, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&inscribe, &attune, &mode, &interact, &startup, &show, &reattach, &quit],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id("lorraine-tray")
         .tooltip("Lorraine Atelier")
@@ -1270,6 +1340,12 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 #[cfg(windows)]
                 hook::set_enabled(app, next);
                 let _ = app.emit("settings:interactive", next);
+            }
+            "startup" => {
+                let next = !settings::get().run_at_startup;
+                settings::set_run_at_startup(next);
+                let _ = if next { autostart::enable() } else { autostart::disable() };
+                let _ = app.emit("settings:runatstartup", next);
             }
             "show" => {
                 if let Some(w) = app.get_webview_window("main") {
@@ -1311,6 +1387,13 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    log_startup(&format!(
+        "=== run() start | minimized={} | cwd={:?} | exe={:?}",
+        launched_minimized(),
+        std::env::current_dir().ok(),
+        std::env::current_exe().ok()
+    ));
+
     // Occlusion-disable is handled per-window via additionalBrowserArgs in
     // tauri.conf.json (identical on every window so they share one WebView2
     // environment — differing args split the environment and break window
@@ -1321,6 +1404,7 @@ pub fn run() {
     // Load persisted settings BEFORE the Builder creates windows, so the wallpaper
     // webviews' early get_settings sees the real mode (not the default).
     settings::load();
+    log_startup("settings loaded; building app");
 
     tauri::Builder::default()
         .plugin(
@@ -1342,6 +1426,8 @@ pub fn run() {
             set_desktop_interactive,
             set_hit_rects,
             set_colorblind,
+            set_run_at_startup,
+            should_show_main,
             set_buddy_sprite,
             set_widget_layout,
             reset_widget_layout,
@@ -1385,12 +1471,18 @@ pub fn run() {
                 log(&handle, format!("tray setup failed: {e}"));
             }
 
+            // Bring the OS Run key in line with the persisted preference. The
+            // control window reveals itself on first paint via `should_show_main`
+            // (an autostart `--minimized` launch stays hidden in the tray).
+            sync_autostart();
+
             let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyW);
             match app.global_shortcut().register(shortcut) {
                 Ok(_) => log(&handle, "hotkey Ctrl+Alt+W registered"),
                 Err(e) => log(&handle, format!("hotkey register failed: {e}")),
             }
 
+            log_startup("setup() done (tray, autostart sync, hotkey)");
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -1398,17 +1490,25 @@ pub fn run() {
         .run(|_handle, _event| {
             // Attach the wallpaper windows once the event loop is running.
             #[cfg(windows)]
-            if let tauri::RunEvent::Ready = _event {
-                ensure_attached(_handle);
-                spawn_watchdog(_handle.clone());
-                spawn_buddy(_handle.clone());
-                spawn_birthday_watch(_handle.clone());
-                if settings::get().desktop_interactive {
-                    hook::set_enabled(_handle, true);
+            match _event {
+                tauri::RunEvent::Ready => {
+                    log_startup("RunEvent::Ready; attaching wallpaper");
+                    ensure_attached(_handle);
+                    spawn_watchdog(_handle.clone());
+                    spawn_buddy(_handle.clone());
+                    spawn_birthday_watch(_handle.clone());
+                    if settings::get().desktop_interactive {
+                        hook::set_enabled(_handle, true);
+                    }
+                    // Belt-and-suspenders: re-broadcast the persisted mode once windows
+                    // exist, in case any wallpaper pulled before settings were loaded.
+                    let _ = _handle.emit("settings:mode", settings::get().mode);
+                    log_startup("startup complete (attach + watchdog + buddy + hook)");
                 }
-                // Belt-and-suspenders: re-broadcast the persisted mode once windows
-                // exist, in case any wallpaper pulled before settings were loaded.
-                let _ = _handle.emit("settings:mode", settings::get().mode);
+                // If a logon launch dies, this tells us it exited cleanly (vs. a hard
+                // mid-startup abort that never reaches here).
+                tauri::RunEvent::Exit => log_startup("RunEvent::Exit (shutting down)"),
+                _ => {}
             }
         });
 }

@@ -44,6 +44,12 @@ webview2-com = "0.38"
 # `wasapi` crate is used for loopback (cpal 0.15 loopback is unreliable, cpal #476).
 wasapi = "0.15"
 realfft = "3"
+# Run-at-startup: we drop a shortcut in the per-user Startup folder. A .lnk stores
+# target + arguments as SEPARATE fields (immune to the installed path's space) and,
+# unlike an HKCU Run value, actually launches our exe at logon (the Run-key path
+# silently failed for this exe; the Startup shortcut is the robust method). See
+# src/autostart.rs.
+mslnk = "0.1"
 
 [profile.release]
 codegen-units = 1

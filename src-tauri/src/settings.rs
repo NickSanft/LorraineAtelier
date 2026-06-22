@@ -84,6 +84,7 @@ pub struct Settings {
     pub colorblind: bool, // swap element colors to a colorblind-safe palette
     pub buddy_sprite: String, // custom brushbuddy image (path/URL); empty = built-in sprite
     pub widget_layout: HashMap<String, WidgetPos>, // per-widget placement override
+    pub run_at_startup: bool, // launch the atelier at login (HKCU Run key)
 }
 
 impl Default for Settings {
@@ -105,6 +106,7 @@ impl Default for Settings {
             colorblind: false,
             buddy_sprite: String::new(),
             widget_layout: HashMap::new(),
+            run_at_startup: false, // opt-in; toggled in the control panel / tray
         }
     }
 }
@@ -217,6 +219,11 @@ pub fn set_colorblind(v: bool) {
 
 pub fn set_buddy_sprite(src: String) {
     store().lock().unwrap().buddy_sprite = src;
+    save();
+}
+
+pub fn set_run_at_startup(v: bool) {
+    store().lock().unwrap().run_at_startup = v;
     save();
 }
 
