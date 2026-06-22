@@ -28,6 +28,7 @@ pub struct Gift {
     pub paragraphs: Vec<String>,
     pub signature: String,
     pub birthday: String,
+    pub silver_eve: String, // "MM-DD" for the Silver-Eve festival egg (empty = off)
 }
 
 impl Default for Gift {
@@ -42,6 +43,7 @@ impl Default for Gift {
             ],
             signature: "— with love".into(),
             birthday: String::new(),
+            silver_eve: String::new(),
         }
     }
 }
@@ -59,6 +61,7 @@ pub struct Settings {
     pub gift: Gift,
     pub secret_found: bool,
     pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
+    pub last_silvereve_year: i32, // guard so Silver-Eve fires at most once/year
     pub discovered: HashMap<String, u32>, // element key → times cast (Tower of Tomes)
     pub first_run: bool, // show the one-time welcome until dismissed
     pub colorblind: bool, // swap element colors to a colorblind-safe palette
@@ -77,6 +80,7 @@ impl Default for Settings {
             gift: Gift::default(),
             secret_found: false,
             last_birthday_year: 0,
+            last_silvereve_year: 0,
             discovered: HashMap::new(),
             first_run: true,
             colorblind: false,
@@ -201,5 +205,10 @@ pub fn record_discovery(key: &str) {
 
 pub fn set_last_birthday_year(year: i32) {
     store().lock().unwrap().last_birthday_year = year;
+    save();
+}
+
+pub fn set_last_silvereve_year(year: i32) {
+    store().lock().unwrap().last_silvereve_year = year;
     save();
 }

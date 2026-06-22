@@ -374,6 +374,44 @@ function startBird() {
 }
 listen("cast:bird", () => startBird());
 
+// ---- Silver-Eve festival egg: a drift of gold/silver star-motes ("the Night of
+// the Falling Stars"), surfaced by Rust on the date or via the preview button.
+let festivalRaf = 0;
+function startFestival() {
+  const c = bloom as CV;
+  const ctx = c.getContext("2d")!;
+  const w = c._cssw || 0, h = c._cssh || 0;
+  if (!w || !h) return;
+  const dur = 14000;
+  const start = performance.now();
+  const motes = Array.from({ length: 64 }, () => ({
+    x: Math.random() * w, y: Math.random() * h, spd: 12 + Math.random() * 34,
+    sway: Math.random() * 6.28, swaySpd: 0.4 + Math.random(), r: 1 + Math.random() * 2.2, gold: Math.random() < 0.55,
+  }));
+  let last = start;
+  cancelAnimationFrame(festivalRaf);
+  const anim = (now: number) => {
+    const p = (now - start) / dur;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    ctx.clearRect(0, 0, w, h);
+    if (p >= 1) return;
+    const fade = Math.min(1, Math.sin(p * Math.PI) * 1.8);
+    for (const m of motes) {
+      m.y += m.spd * dt;
+      if (m.y > h + 12) { m.y = -12; m.x = Math.random() * w; }
+      const x = m.x + Math.sin(now * 0.001 * m.swaySpd + m.sway) * 16;
+      ctx.beginPath();
+      ctx.fillStyle = m.gold ? `rgba(245,210,126,${(0.7 * fade).toFixed(3)})` : `rgba(214,222,235,${(0.6 * fade).toFixed(3)})`;
+      ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 9;
+      ctx.arc(x, m.y, m.r, 0, 6.2832); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    festivalRaf = requestAnimationFrame(anim);
+  };
+  festivalRaf = requestAnimationFrame(anim);
+}
+listen("gift:festival", () => startFestival());
+
 listen<CastFire>("cast:fire", (e) => {
   const m = e.payload;
   updateDockDisplay(curMode, m.ink); // reflect spent ink in the dock gauge
@@ -437,9 +475,18 @@ setUiScale();
 applyMode(curMode); // night by default (matches the inline CSS — no flash)
 // Pull the persisted mode (transitions to day if set) + follow live changes.
 function applyColorblind(on: boolean) { document.body.classList.toggle("cb", on); }
-invoke<{ mode: Mode; colorblind?: boolean }>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) applyColorblind(!!s.colorblind); }).catch(() => {});
+// Top-strip "N / 4 glyphs inscribed" counter — base elements with at least one cast.
+const glyphCountEl = document.getElementById("glyphcount");
+const BASE_ELEMENTS = ["fire", "water", "wind", "earth"];
+function updateGlyphCount(discovered?: Record<string, number>) {
+  if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
+}
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number> }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
+// A new cast/secret updates the inscribed count.
+listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => updateGlyphCount(s?.discovered)).catch(() => {}); });
 sizeAll();
 scheduleHitRects(); // initial publish (clears until this monitor learns it's primary)
 window.addEventListener("resize", () => {

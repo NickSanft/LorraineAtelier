@@ -489,10 +489,32 @@ fn check_birthday(app: &AppHandle) {
     let _ = app;
 }
 
+/// Surface the Silver-Eve festival (the Night of the Falling Stars) once on the
+/// configured date (local time), guarded by `lastSilvereveYear` so it fires at most
+/// once per year. Cosmetic — a drift of gold/silver star-motes on every monitor.
+#[cfg(windows)]
+fn check_silvereve(app: &AppHandle) {
+    let eve = settings::get().gift.silver_eve;
+    if eve.trim().is_empty() {
+        return;
+    }
+    let (year, m, d) = local_ymd();
+    let today = format!("{m:02}-{d:02}");
+    if today == eve && settings::get().last_silvereve_year != year {
+        settings::set_last_silvereve_year(year);
+        log(app, "silver-eve: the falling stars");
+        let _ = app.emit("gift:festival", ());
+    }
+}
+
 fn spawn_birthday_watch(app: AppHandle) {
     std::thread::spawn(move || loop {
         let a = app.clone();
-        let _ = app.run_on_main_thread(move || check_birthday(&a));
+        let _ = app.run_on_main_thread(move || {
+            check_birthday(&a);
+            #[cfg(windows)]
+            check_silvereve(&a);
+        });
         std::thread::sleep(std::time::Duration::from_secs(60));
     });
 }
@@ -1134,6 +1156,13 @@ fn conjure_bird(app: AppHandle) -> String {
     "a bird takes wing".into()
 }
 
+/// Preview the Silver-Eve festival lights on demand (for personalizing the gift).
+#[tauri::command]
+fn preview_silvereve(app: AppHandle) -> String {
+    let _ = app.emit("gift:festival", ());
+    "previewing silver eve".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1259,6 +1288,7 @@ pub fn run() {
             preview_storybook,
             dismiss_welcome,
             conjure_bird,
+            preview_silvereve,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
