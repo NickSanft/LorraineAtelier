@@ -6,7 +6,8 @@
     <title>Lorraine Atelier</title>
     <link rel="stylesheet" href="/fonts/atelier-fonts.css" />
     <style>
-      :root { color-scheme: dark; }
+      :root { color-scheme: dark; --el-fire: #e8954a; --el-water: #5a93f0; --el-wind: #2fd6c6; --el-earth: #c79a4c; --el-light: #f5d27e; }
+      body.cb { --el-fire: #d55e00; --el-water: #0072b2; --el-wind: #009e73; --el-earth: #e69f00; --el-light: #f0e442; }
       * { box-sizing: border-box; }
       body {
         margin: 0; min-height: 100vh; font-family: "EB Garamond", serif;
@@ -72,6 +73,7 @@
         <button id="attune">▶ Attune</button>
         <button id="pause">Pause on fullscreen: off</button>
         <button id="interact">Desktop interactivity: off</button>
+        <button id="colorblind">Colorblind palette: off</button>
         <button id="preview">Preview dedication</button>
       </div>
     </div>

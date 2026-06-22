@@ -11,6 +11,7 @@ const modeBtn = document.getElementById("mode") as HTMLButtonElement;
 const attuneBtn = document.getElementById("attune") as HTMLButtonElement;
 const pauseBtn = document.getElementById("pause") as HTMLButtonElement;
 const interactBtn = document.getElementById("interact") as HTMLButtonElement;
+const colorblindBtn = document.getElementById("colorblind") as HTMLButtonElement;
 const bindingsEl = document.getElementById("bindings")!;
 const tomesEl = document.getElementById("tomes")!;
 const tomesHintEl = document.getElementById("tomesHint")!;
@@ -28,6 +29,7 @@ let mode: "day" | "night" = "night";
 let attuned = false;
 let pauseOn = false;
 let interactOn = false;
+let colorblindOn = false;
 
 function renderMode() {
   modeBtn.textContent = mode === "night" ? "☾ Night" : "☀ Day";
@@ -45,6 +47,11 @@ function renderInteract() {
   interactBtn.textContent = `Desktop interactivity: ${interactOn ? "on" : "off"}`;
   interactBtn.classList.toggle("on", interactOn);
 }
+function renderColorblind() {
+  colorblindBtn.textContent = `Colorblind palette: ${colorblindOn ? "on" : "off"}`;
+  colorblindBtn.classList.toggle("on", colorblindOn);
+  document.body.classList.toggle("cb", colorblindOn);
+}
 
 interface SettingsDto {
   mode: string;
@@ -54,6 +61,7 @@ interface SettingsDto {
   discovered: Record<string, number>;
   secretFound: boolean;
   firstRun: boolean;
+  colorblind: boolean;
 }
 
 async function main() {
@@ -74,7 +82,7 @@ async function main() {
       const row = document.createElement("div");
       row.className = "brow";
       const g = document.createElement("span");
-      g.className = "bg"; g.textContent = el.glyph; g.style.color = el.hue;
+      g.className = "bg"; g.textContent = el.glyph; g.style.color = `var(--el-${el.key})`;
       const n = document.createElement("span");
       n.className = "bn"; n.textContent = el.name;
       const inp = document.createElement("input");
@@ -108,7 +116,7 @@ async function main() {
       row.className = n > 0 ? "trow" : "trow locked";
       const g = document.createElement("span");
       g.className = "tg"; g.textContent = n > 0 ? el.glyph : "❔";
-      g.style.color = n > 0 ? el.hue : "#6b6080";
+      g.style.color = n > 0 ? `var(--el-${el.key})` : "#6b6080";
       const meta = document.createElement("div");
       meta.className = "tmeta";
       const name = document.createElement("span");
@@ -149,6 +157,7 @@ async function main() {
     mode = s.mode === "day" ? "day" : "night";
     pauseOn = !!s.pauseOnFullscreen;
     interactOn = !!s.desktopInteractive;
+    colorblindOn = !!s.colorblind;
     buildBindings(s.mappings || {});
     buildTomes(s);
     if (s.firstRun) {
@@ -163,7 +172,7 @@ async function main() {
     append("get_settings ✗ " + e);
   }
   try { attuned = !!(await invoke<boolean>("viz_status")); } catch { /* */ }
-  renderMode(); renderAttune(); renderPause(); renderInteract();
+  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind();
 
   // Flip via the authoritative Rust toggle; our label updates from the
   // `settings:mode` broadcast below (so it can't desync from the real state).
@@ -183,6 +192,11 @@ async function main() {
     renderInteract();
     await invoke("set_desktop_interactive", { enabled: interactOn });
   });
+  colorblindBtn.addEventListener("click", async () => {
+    colorblindOn = !colorblindOn;
+    renderColorblind();
+    await invoke("set_colorblind", { enabled: colorblindOn });
+  });
 
   document.getElementById("resetBindings")!.addEventListener("click", async () => {
     await invoke("reset_mappings");
@@ -200,6 +214,7 @@ async function main() {
   // Stay in sync when the same state is toggled from the tray.
   await event.listen<string>("settings:mode", (e) => { mode = e.payload === "day" ? "day" : "night"; renderMode(); });
   await event.listen<boolean>("settings:interactive", (e) => { interactOn = !!e.payload; renderInteract(); });
+  await event.listen<boolean>("settings:colorblind", (e) => { colorblindOn = !!e.payload; renderColorblind(); });
   await event.listen<{ attuned: boolean }>("viz:source-changed", (e) => { attuned = !!e.payload.attuned; renderAttune(); });
   // Tower of Tomes: refresh on a new cast / secret-found; surface it on the dock click.
   await event.listen("tomes:changed", () => { void refreshTomes(); });

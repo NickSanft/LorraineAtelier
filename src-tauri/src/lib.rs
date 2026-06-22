@@ -1058,6 +1058,15 @@ fn set_desktop_interactive(app: AppHandle, enabled: bool) -> String {
     format!("desktop_interactive={enabled}")
 }
 
+/// Toggle the colorblind-safe element palette. Persisted; broadcast so every surface
+/// (wallpaper dock, casting overlay, control panel) swaps via a `cb` body class.
+#[tauri::command]
+fn set_colorblind(app: AppHandle, enabled: bool) -> String {
+    settings::set_colorblind(enabled);
+    let _ = app.emit("settings:colorblind", enabled);
+    format!("colorblind={enabled}")
+}
+
 /// The current persisted settings (mode / mappings / pause) for the control UI
 /// and the wallpaper's initial day/night state.
 #[tauri::command]
@@ -1233,6 +1242,7 @@ pub fn run() {
             set_pause_on_fullscreen,
             set_desktop_interactive,
             set_hit_rects,
+            set_colorblind,
             get_settings,
             set_mode,
             toggle_mode,

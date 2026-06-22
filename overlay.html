@@ -15,7 +15,10 @@
         --c-panel: rgba(22,20,36,.6); --c-edge: rgba(232,184,74,.42);
         --c-gold: #e8b84a; --c-teal: #2fd6c6; --c-halo: rgba(11,9,20,.62);
         color: var(--c-text);
+        /* Element colours routed through vars for the colorblind toggle. */
+        --el-fire: #e8954a; --el-water: #5a93f0; --el-wind: #2fd6c6; --el-earth: #c79a4c; --el-light: #f5d27e;
       }
+      body.cb { --el-fire: #d55e00; --el-water: #0072b2; --el-wind: #009e73; --el-earth: #e69f00; --el-light: #f0e442; }
       #scrim { display: none; position: fixed; inset: 0; background: rgba(8,6,14,.5); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
       #slate {
         display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
@@ -77,10 +80,10 @@
           <div class="m"><span class="ml">Symmetry</span><div class="track"><div id="barSym"></div></div></div>
         </div>
         <div class="legend">
-          <div class="s"><span class="g" style="color:#e8954a">△</span><span class="n">Fire</span></div>
-          <div class="s"><span class="g" style="color:#5a93f0">▽</span><span class="n">Water</span></div>
-          <div class="s"><span class="g" style="color:#2fd6c6">○</span><span class="n">Wind</span></div>
-          <div class="s"><span class="g" style="color:#c79a4c">□</span><span class="n">Earth</span></div>
+          <div class="s"><span class="g" style="color:var(--el-fire)">△</span><span class="n">Fire</span></div>
+          <div class="s"><span class="g" style="color:var(--el-water)">▽</span><span class="n">Water</span></div>
+          <div class="s"><span class="g" style="color:var(--el-wind)">○</span><span class="n">Wind</span></div>
+          <div class="s"><span class="g" style="color:var(--el-earth)">□</span><span class="n">Earth</span></div>
         </div>
         <div class="btns">
           <button class="btn" id="btnClear">Clear</button>

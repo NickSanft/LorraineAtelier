@@ -13,6 +13,10 @@
       @keyframes wha-spin { to { transform: rotate(360deg); } }
       @keyframes wha-spin-rev { to { transform: rotate(-360deg); } }
       canvas { display: block; }
+      /* Element colours (Fire/Water/Wind/Earth/Light) routed through vars so the
+         colorblind toggle can swap them to an Okabe-Ito safe palette. */
+      :root { --el-fire: #e8954a; --el-water: #5a93f0; --el-wind: #2fd6c6; --el-earth: #c79a4c; --el-light: #f5d27e; }
+      body.cb { --el-fire: #d55e00; --el-water: #0072b2; --el-wind: #009e73; --el-earth: #e69f00; --el-light: #f0e442; }
     </style>
   </head>
   <body>
@@ -113,19 +117,19 @@
           <!-- spell vials (Fire △, Water ▽, Wind ○, Earth □) -->
           <div style="display:flex;gap:4px">
             <div data-pill="fire" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
-              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#e8954a;text-shadow:0 0 12px rgba(232,149,74,.6)">△</span>
+              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:var(--el-fire);text-shadow:0 0 12px rgba(232,149,74,.6)">△</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Steam</span>
             </div>
             <div data-pill="water" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
-              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#5a93f0;text-shadow:0 0 12px rgba(90,147,240,.6)">▽</span>
+              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:var(--el-water);text-shadow:0 0 12px rgba(90,147,240,.6)">▽</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Discord</span>
             </div>
             <div data-pill="wind" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
-              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#2fd6c6;text-shadow:0 0 12px rgba(47,214,198,.6)">○</span>
+              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:var(--el-wind);text-shadow:0 0 12px rgba(47,214,198,.6)">○</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Browser</span>
             </div>
             <div data-pill="earth" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;white-space:nowrap;color:var(--c-text)">
-              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:#c79a4c;text-shadow:0 0 12px rgba(199,154,76,.55)">□</span>
+              <span style="font-size:calc(21px * var(--ui-scale,1));line-height:1;color:var(--el-earth);text-shadow:0 0 12px rgba(199,154,76,.55)">□</span>
               <span style="font-family:'Cinzel',serif;font-size:calc(8.5px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">Files</span>
             </div>
           </div>

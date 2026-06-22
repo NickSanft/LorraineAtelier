@@ -61,6 +61,7 @@ pub struct Settings {
     pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
     pub discovered: HashMap<String, u32>, // element key → times cast (Tower of Tomes)
     pub first_run: bool, // show the one-time welcome until dismissed
+    pub colorblind: bool, // swap element colors to a colorblind-safe palette
 }
 
 impl Default for Settings {
@@ -78,6 +79,7 @@ impl Default for Settings {
             last_birthday_year: 0,
             discovered: HashMap::new(),
             first_run: true,
+            colorblind: false,
         }
     }
 }
@@ -180,6 +182,11 @@ pub fn set_secret_found(found: bool) {
 
 pub fn set_first_run(v: bool) {
     store().lock().unwrap().first_run = v;
+    save();
+}
+
+pub fn set_colorblind(v: bool) {
+    store().lock().unwrap().colorblind = v;
     save();
 }
 

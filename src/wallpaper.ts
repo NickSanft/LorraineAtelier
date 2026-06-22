@@ -391,8 +391,10 @@ function setUiScale() {
 setUiScale();
 applyMode(curMode); // night by default (matches the inline CSS — no flash)
 // Pull the persisted mode (transitions to day if set) + follow live changes.
-invoke<{ mode: Mode }>("get_settings").then((s) => { if (s && s.mode) applyMode(s.mode); }).catch(() => {});
+function applyColorblind(on: boolean) { document.body.classList.toggle("cb", on); }
+invoke<{ mode: Mode; colorblind?: boolean }>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) applyColorblind(!!s.colorblind); }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
+listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 sizeAll();
 scheduleHitRects(); // initial publish (clears until this monitor learns it's primary)
 window.addEventListener("resize", () => {

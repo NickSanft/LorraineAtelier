@@ -209,8 +209,14 @@ async function seal(inverse: boolean, ringScore: number) {
   bloom(spell.sigil as Sigil, finalScore, inverse, detected.sideways, detected.jutDir, fire);
 }
 
+// The element's colour, read from the --el-<key> CSS var so the colorblind toggle
+// (a `cb` class on body, swapping to Okabe-Ito) flows through to the canvas too.
+function elColor(key: string): string {
+  return getComputedStyle(document.body).getPropertyValue(`--el-${key}`).trim() || TEAL;
+}
+
 function showReading(spell: SpellDto) {
-  hudGlyph.textContent = spell.glyph; hudGlyph.style.color = spell.hue;
+  hudGlyph.textContent = spell.glyph; hudGlyph.style.color = elColor(spell.key);
   hudName.textContent = spell.element + " Sigil";
   hudApp.textContent = spell.key === "light" ? "→ illumination" : "→ " + spell.app;
 }
@@ -226,7 +232,7 @@ function setMeters(sizePct: number, steadyPct: number, symPct: number) {
 // catching-light core, tinted by the active element (conjuring ink "catches light").
 function renderStrokes() {
   cctx.lineJoin = "round"; cctx.lineCap = "round";
-  const accent = phase === "ring" && detected?.spell ? detected.spell.hue : TEAL;
+  const accent = phase === "ring" && detected?.spell ? elColor(detected.spell.key) : TEAL;
   const all = curStroke ? strokes.concat([curStroke]) : strokes;
   for (const st of all) {
     if (st.length < 2) continue;
@@ -467,6 +473,11 @@ listen<string>("overlay:mode", (e) => setOverlayMode(e.payload));
 
 // The birthday auto-bloom (and the Preview button) surface the dedication here.
 listen("gift:birthday", () => openStorybook());
+
+// Colorblind-safe element palette (a `cb` class on body swaps the --el-* vars).
+function applyColorblind(on: boolean) { document.body.classList.toggle("cb", on); }
+invoke<{ colorblind?: boolean }>("get_settings").then((s) => applyColorblind(!!s?.colorblind)).catch(() => {});
+listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 
 // Continuous idle redraw so the seal canvas breathes (slowly counter-rotating
 // guide rings) while you draw; the bloom animation takes over (this skips) during
