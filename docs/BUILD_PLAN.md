@@ -303,6 +303,20 @@ Phases are ordered so the **riskiest remaining unknown (explorer-restart recover
 
 ---
 
+### Phase 11 — Brushbuddy enrichment & skins (post-gift polish)
+**Goal:** bring the now-canon brushbuddy to life (animation + behaviors) and ship the skin picker. The art base + swap seam already landed (commit `bc97a92`: canon fudemushi sprite, `--buddy-*` skin vars, swappable `buddy_sprite`); this phase is the *behaviors* and *skins* on top. Keep the buddy **Rust-owned** (state in `spawn_buddy`, virtual-desktop coords, per-window `buddy` event) so it can never desync; the wallpaper stays a pure view. Full identity/art/behavior research is in the §"Brushbuddy — identity, art & behavior" subsection above; this phase implements its prioritized catalog.
+**Deliverables:** richer `spawn_buddy` state machine + per-frame sprite states; white/striped skins + a skin picker; pet/boop via the existing WH_MOUSE_LL hook.
+**Key tasks (from the behavior catalog):**
+- **P0 idle life + day/night:** tail-driven idle loop (breathing, blink, tail sway, rare sit/look-around/stretch), sleep/nap with a true render pause (drop redraw, fold into the idle-throttle power policy), day/night mood/palette shift off `set_mode`, startled squash-stretch hop on a nearby `cast:fire`. (Sprite needs multi-pose support — extend the single SVG to a few tail/eye/leg keyframes driven by the buddy event, OR a small sprite-state enum from Rust.)
+- **P1 reactions & nav:** scurry-to-bloom & sniff fresh ink (`cast:fire` origin), ink-scent seeking (drift toward inky UI / clock / seal / read-only cursor poll — no pointer capture), fading sumi ink-trail tail (movement deltas, tint toward the viz hue), smarter eased seam-aware roaming (accel/decel, edge loiter, perch, avoid clock/seal footprints), multi-monitor ink-portal seam crossing, hourly clock pilgrimage, visualizer-seal dance (`viz:bands` beat), ink-reservoir empathy (mood tracks the ink gauge).
+- **P2 input + flavor:** pet/boop reaction (click/hover on the buddy via the **already-installed WH_MOUSE_LL hook** + the buddy hit-rect — purr/wiggle/heart ink-puff; over-petting → puff up + tail flick), seasonal/birthday reactions, cosmetic stat/mood drift, closing-the-circle micro-spell idle, rare antics (hat try-on, chase an ink droplet, PuffPuff gag).
+- **Skins:** white + striped via the `--buddy-*` vars (the seam exists); a persisted `buddy_skin` setting + a control-panel skin picker (lore-justified). Striped needs a few stripe paths gated by a `--buddy-stripe` var.
+- **Guardrails:** never block clicks/cover active content; intermittent/randomized (no Clippy); interactive + sound opt-in; single Rust-timed loop with true sleep; ≤3 Hz any flashing; respect `prefers-reduced-motion`.
+**Exit criteria:** the buddy idles/naps/reacts believably, crosses monitors gracefully, is pettable, and the recipient can pick a skin — all without desync or input-blocking.
+**Effort: XL**
+
+---
+
 ## 3. Consolidated Risk Register
 
 | # | Risk | Severity | Mitigation |
