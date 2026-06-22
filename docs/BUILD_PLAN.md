@@ -277,16 +277,18 @@ Phases are ordered so the **riskiest remaining unknown (explorer-restart recover
 **Effort: M**
 **Remaining for the gift:** decide whether to default run-at-startup **on** for the installed build (a live wallpaper should survive reboots) — e.g. enable it from the welcome's "Begin ✦" or flip the default in the gift build (see Personalization checklist).
 
-### Phase 9 — Packaging (NSIS per-user, one-off installer)
+### Phase 9 — Packaging (NSIS per-user, one-off installer)  ⚙️ CORE VALIDATED (2026-06-22); polish items remain
 **Goal:** a single installer the recipient runs once.
 **Deliverables:** NSIS per-user installer (already configured: `bundle.targets:["nsis"]`, `installMode:"currentUser"`), version-stamped GitHub Actions build, embedded resources.
+**Validated 2026-06-22:** `pnpm tauri build` produces `target/release/bundle/nsis/Lorraine Atelier_0.0.0_x64-setup.exe` (4.1 MB; release LTO ~3 min). Silent `/S` install → per-user, **no UAC**, exit 0, lands at `%LOCALAPPDATA%\Lorraine Atelier\` (path WITH a space), registers an HKCU uninstall entry + `uninstall.exe`. Installed build launches cleanly (assets embedded via `dist`, wallpaper attaches) and its `sync_autostart` creates the Startup `.lnk` pointing to the **spaced install path** (`"…\Lorraine Atelier\lorraine-atelier.exe" --minimized`) — the exact case that broke the old unquoted Run-key path. The `.lnk` launches at logon (proven in Phase 8), so reboot-survival is confirmed.
 **Key tasks:**
-- Reuse the DivoraVoiceMod release profile (lto, codegen-units=1, panic=abort, strip) and the `release.yml` that version-stamps from the git tag (build NSIS).
-- Bundle `gift.default.json` + the two wallpaper renditions + fonts as Tauri resources (embedded in `dist`, no runtime fetch).
-- **Skip auto-update** (Tauri updater can't auth private GitHub assets) — one-off installer only.
-- Replace the placeholder app icon (`src-tauri/icons/*`) with the themed Lorraine Atelier icon before the final build.
+- Reuse the DivoraVoiceMod release profile (lto, codegen-units=1, panic=abort, strip) ✅ already in `Cargo.toml`. `release.yml` GitHub Actions version-stamp build = OPTIONAL for a one-off private gift (local `pnpm tauri build` suffices).
+- Resources: the two wallpaper renditions (`public/wallpaper.webp`, `public/wallpaper-3440.jpg`) + fonts ship in `dist` (embedded via `frontendDist` + custom-protocol) ✅. No separate `gift.default.json` resource — the dedication is the hardcoded `Gift::default()` + `settings.json` override.
+- **Skip auto-update** (Tauri updater can't auth private GitHub assets) — one-off installer only. ✅ (no updater configured)
+- ⬜ **Replace the placeholder app icon** (`src-tauri/icons/*`) with the themed Lorraine Atelier icon before the final build (currently default-generated).
+- ⬜ **Bump version** `0.0.0` → `1.0.0` in `tauri.conf.json` + `Cargo.toml` for the gift build.
 - **Unsigned is acceptable** (self-signed == unsigned for SmartScreen; EV no longer bypasses it) — recipient clicks "More info → Run anyway" once.
-**Exit criteria:** the NSIS installer installs per-user without admin/UAC, launches to tray, and survives a reboot with run-at-startup on.
+**Exit criteria:** ✅ installs per-user without admin/UAC, launches to tray, autostart `.lnk` on the spaced install path survives reboot. (Remaining: themed icon + version bump before cutting the final gift installer.)
 **Effort: S**
 
 ### Phase 10 — Pre-gift QA pass
