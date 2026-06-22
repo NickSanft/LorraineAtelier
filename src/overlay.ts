@@ -302,11 +302,11 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
   const start = performance.now();
   const dur = score >= 70 ? 1300 : score >= 42 ? 1500 : 1700;
   const sloppy = score < 42;
-  // A cursed misfire blooms CORRUPTED: a sickly stone-violet, jittered like a
-  // brimmed-cap scrawl, then Petrification creeps in (below).
+  // A cursed misfire blooms CORRUPTED: the seal curdles COLD to a low-chroma
+  // stone-violet (no jitter — stillness is canon), then Petrification erupts (below).
   const corrupt = fire.cursed;
-  const main = corrupt ? "#8a8290" : inverse ? GOLD : TEAL;
-  const rayCol = corrupt ? "#9a9088" : GOLD;
+  const main = corrupt ? "#6c6478" : inverse ? GOLD : TEAL; // cold stone-violet
+  const rayCol = corrupt ? "#8a7a52" : GOLD; // drained cold-amber seam
   const anim = (now: number) => {
     const p = Math.min(1, (now - start) / dur);
     cctx.clearRect(0, 0, W, H);
@@ -318,8 +318,7 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
     cctx.translate(center.x + jx, center.y + jy);
     cctx.rotate((inverse ? -1 : 1) * ease * 1.3 + (sideways ? Math.sin(p * 8) * 0.12 * (1 - p) : 0));
     for (let k = 0; k < 3; k++) {
-      const jit = corrupt ? (Math.random() - 0.5) * 10 : 0;
-      const rr = (40 + k * 46) * ease * (sloppy ? 1 + 0.12 * Math.sin(now * 0.05 + k) : 1) + jit;
+      const rr = (40 + k * 46) * ease * (sloppy ? 1 + 0.12 * Math.sin(now * 0.05 + k) : 1);
       cctx.beginPath(); cctx.strokeStyle = main; cctx.globalAlpha = (1 - p) * 0.9;
       cctx.lineWidth = 2.4; cctx.shadowColor = cctx.strokeStyle; cctx.shadowBlur = 18 * (1 - p);
       cctx.arc(0, 0, Math.max(1, rr), 0, 6.2832); cctx.stroke();
@@ -335,7 +334,7 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
     cctx.lineWidth = 3; cctx.shadowColor = cctx.strokeStyle; cctx.shadowBlur = 24 * (1 - p);
     drawGlyphPath(cctx, sigil, gs); cctx.stroke();
     const fl = cctx.createRadialGradient(0, 0, 0, 0, 0, 220);
-    fl.addColorStop(0, (corrupt ? "rgba(138,130,144," : inverse ? "rgba(232,184,74," : "rgba(47,214,198,") + (0.5 * (1 - p)).toFixed(3) + ")");
+    fl.addColorStop(0, (corrupt ? "rgba(108,100,120," : inverse ? "rgba(232,184,74," : "rgba(47,214,198,") + (0.5 * (1 - p)).toFixed(3) + ")");
     fl.addColorStop(1, "rgba(0,0,0,0)");
     cctx.globalAlpha = 1; cctx.fillStyle = fl; cctx.beginPath(); cctx.arc(0, 0, 220, 0, 6.2832); cctx.fill();
     cctx.restore(); cctx.globalAlpha = 1; cctx.shadowBlur = 0;
@@ -357,37 +356,65 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
   bloomRaf = requestAnimationFrame(anim);
 }
 
-// Cursed misfire = a Brimmed-Cap backfire: stone-grey Petrification (the accidental
-// miscast that opens the manga) creeps over the slate from the seal, holds, then
-// recedes. Always harmless — it passes.
+// Cursed misfire = a Brimmed-Cap backfire: WHA Petrification, which is CRYSTAL, not
+// grey stone. Faceted crystalline shards erupt from the seal outward (dip-pen ink
+// outlines + chalky catch-lights + crevice hatching = Shirahama's engraving), march
+// arrhythmically (eating the glyph first), FREEZE absolutely still (the time-stop
+// beat that sells the dread), then crumble from the frontier inward into stone-dust.
+// Always harmless — it passes. Forbidden tint stays muted (cold stone-violet + a
+// drained cold-amber seam), never neon; no continuous jitter (stillness is canon).
 function petrify(onDone: () => void) {
-  const start = performance.now();
-  const grow = 650, hold = 380, recede = 950, total = grow + hold + recede;
   const cx = sigilCenter?.x ?? W / 2, cy = sigilCenter?.y ?? H / 2;
-  const maxR = Math.hypot(W, H) * 0.62;
-  const cracks = Array.from({ length: 9 }, (_, i) => ({
-    a: (i / 9) * 6.2832 + (Math.random() - 0.5) * 0.4,
-    segs: Array.from({ length: 4 }, (_, j) => ({ t: (j + 1) / 4, off: (Math.random() - 0.5) * 0.5 })),
-  }));
+  const maxR = Math.hypot(W, H) * 0.58;
+  const RINGS = [0, 0.2, 0.42, 0.66, 1.0]; // denser facets near the centre
+  const STONE = ["#6f6a63", "#514c46", "#2c2925"]; // cool parchment-grey crystal body
+  type Pt = { x: number; y: number };
+  type Facet = { pts: Pt[]; mx: number; my: number; nucR: number; fill: string; violet: boolean; hatch: boolean; light: number; dusted: boolean };
+  const facets: Facet[] = [];
+  const jit = maxR * 0.05, jr = () => Math.random() - 0.5;
+  const corner = (r: number, a: number): Pt => ({ x: cx + Math.cos(a) * r + jr() * jit, y: cy + Math.sin(a) * r + jr() * jit });
+  for (let ri = 0; ri < RINGS.length - 1; ri++) {
+    const r0 = RINGS[ri] * maxR, r1 = RINGS[ri + 1] * maxR, sectors = 8 + ri * 3;
+    for (let si = 0; si < sectors; si++) {
+      const a0 = (si / sectors) * 6.2832, a1 = ((si + 1) / sectors) * 6.2832;
+      const pts: Pt[] = ri === 0
+        ? [{ x: cx + jr() * 6, y: cy + jr() * 6 }, corner(r1, a0), corner(r1, a1)]
+        : [corner(r0, a0), corner(r0, a1), corner(r1, a1), corner(r1, a0)];
+      const mx = pts.reduce((s, q) => s + q.x, 0) / pts.length, my = pts.reduce((s, q) => s + q.y, 0) / pts.length;
+      const violet = Math.random() < 0.16;
+      facets.push({ pts, mx, my, nucR: (r0 + r1) / 2 + jr() * maxR * 0.08, fill: violet ? "#5b5266" : STONE[(Math.random() * 3) | 0], violet, hatch: Math.random() < 0.5, light: (Math.random() * pts.length) | 0, dusted: false });
+    }
+  }
+  const ignite = 180, spread = 860, hold = 620, recede = 980, total = ignite + spread + hold + recede;
+  const start = performance.now();
+  const motes: { x: number; y: number; vx: number; vy: number; r: number; a: number }[] = [];
+  const smooth = (e: number) => e * e * (3 - 2 * e);
+  const trace = (p: Pt[]) => { cctx.beginPath(); cctx.moveTo(p[0].x, p[0].y); for (let i = 1; i < p.length; i++) cctx.lineTo(p[i].x, p[i].y); cctx.closePath(); };
   const anim = (now: number) => {
     const t = now - start;
-    const cov = t < grow ? t / grow : t < grow + hold ? 1 : Math.max(0, 1 - (t - grow - hold) / recede);
-    const r = maxR * (t < grow ? t / grow : 1);
     cctx.clearRect(0, 0, W, H);
-    const g = cctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, r));
-    g.addColorStop(0, `rgba(122,118,112,${(0.84 * cov).toFixed(3)})`);
-    g.addColorStop(0.7, `rgba(96,92,88,${(0.7 * cov).toFixed(3)})`);
-    g.addColorStop(1, "rgba(64,62,60,0)");
-    cctx.fillStyle = g; cctx.beginPath(); cctx.arc(cx, cy, Math.max(1, r), 0, 6.2832); cctx.fill();
-    cctx.strokeStyle = `rgba(38,36,34,${(0.55 * cov).toFixed(3)})`; cctx.lineWidth = 1.6; cctx.lineJoin = "round";
-    for (const cr of cracks) {
-      cctx.beginPath(); cctx.moveTo(cx, cy);
-      for (const s of cr.segs) {
-        const rr = r * 0.82 * s.t, ang = cr.a + s.off;
-        cctx.lineTo(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
+    let front = 0, crumble = maxR + 1;
+    if (t < ignite) front = maxR * 0.12 * (t / ignite);                       // ignition
+    else if (t < ignite + spread) { const e = (t - ignite) / spread; front = maxR * smooth(Math.min(1, e + 0.05 * Math.sin(e * 16))); } // arrhythmic spread
+    else if (t < ignite + spread + hold) front = maxR + 1;                    // FROZEN HOLD (time stops)
+    else { front = maxR + 1; crumble = maxR * (1 - smooth((t - ignite - spread - hold) / recede)); } // crumble-recede
+    for (const f of facets) {
+      if (f.nucR > front) continue; // not yet erupted
+      if (f.nucR > crumble) { // crumbling from the frontier inward → stone-dust
+        if (!f.dusted) { f.dusted = true; for (let d = 0; d < 2; d++) motes.push({ x: f.mx, y: f.my, vx: jr() * 26, vy: 5 + Math.random() * 20, r: 1.4 + Math.random() * 2.2, a: 0.55 }); }
+        continue;
       }
-      cctx.stroke();
+      const a = Math.min(1, (front - f.nucR) / (maxR * 0.06)); // local eruption ramp
+      const e1 = f.pts[(f.light + 1) % f.pts.length];
+      trace(f.pts); cctx.globalAlpha = a * 0.92; cctx.fillStyle = f.fill; cctx.fill();
+      cctx.globalAlpha = a * 0.42; cctx.strokeStyle = "#cdc6b6"; cctx.lineWidth = 1.1; cctx.beginPath(); cctx.moveTo(f.pts[f.light].x, f.pts[f.light].y); cctx.lineTo(e1.x, e1.y); cctx.stroke(); // chalky catch-light rim
+      trace(f.pts); cctx.globalAlpha = a * 0.85; cctx.strokeStyle = "#1b1714"; cctx.lineWidth = 1.4; cctx.lineJoin = "round"; cctx.stroke(); // dip-pen outline
+      if (f.violet) { const e2 = f.pts[(f.light + 2) % f.pts.length]; cctx.globalAlpha = a * 0.3; cctx.strokeStyle = "#8a7a52"; cctx.lineWidth = 0.8; cctx.beginPath(); cctx.moveTo(e1.x, e1.y); cctx.lineTo(e2.x, e2.y); cctx.stroke(); } // cold-amber seam glint
+      if (f.hatch) { cctx.globalAlpha = a * 0.38; cctx.strokeStyle = "#1b1714"; cctx.lineWidth = 0.7; const o = f.pts[2 % f.pts.length]; for (let hI = 1; hI <= 3; hI++) { const u = hI / 4; cctx.beginPath(); cctx.moveTo(f.pts[0].x + (e1.x - f.pts[0].x) * u, f.pts[0].y + (e1.y - f.pts[0].y) * u); cctx.lineTo(f.pts[0].x + (o.x - f.pts[0].x) * u, f.pts[0].y + (o.y - f.pts[0].y) * u); cctx.stroke(); } } // crevice hatching
     }
+    if (t < ignite + 140) { const sa = Math.max(0, 1 - t / (ignite + 140)); cctx.globalAlpha = sa * 0.8; cctx.fillStyle = "#d2dae2"; cctx.beginPath(); cctx.arc(cx, cy, 7 + (1 - sa) * 26, 0, 6.2832); cctx.fill(); } // cold ignition spark
+    for (const m of motes) { m.x += m.vx / 60; m.y += m.vy / 60; m.vy += 0.5; m.a -= 0.013; m.r *= 0.99; if (m.a <= 0) continue; cctx.globalAlpha = m.a; cctx.fillStyle = "#8d877c"; cctx.beginPath(); cctx.arc(m.x, m.y, m.r, 0, 6.2832); cctx.fill(); } // warm stone-dust
+    cctx.globalAlpha = 1;
     if (t < total) requestAnimationFrame(anim);
     else { cctx.clearRect(0, 0, W, H); onDone(); }
   };
@@ -484,6 +511,14 @@ listen<string>("overlay:mode", (e) => setOverlayMode(e.payload));
 
 // The birthday auto-bloom (and the Preview button) surface the dedication here.
 listen("gift:birthday", () => openStorybook());
+
+// Preview the cursed-misfire Petrification on demand (the dev "Preview misfire"
+// button) — a representative full misfire on a sample earth seal, then it passes.
+listen("preview:petrify", () => {
+  if (blooming) return;
+  reset();
+  bloom("square", 78, false, false, 0, { launched: false, cursed: true, dismissed: false, message: "A miscast — the seal curdles to crystal, then passes.", icon: "🜨", ink: 0, key: "earth" });
+});
 
 // Colorblind-safe element palette (a `cb` class on body swaps the --el-* vars).
 function applyColorblind(on: boolean) { document.body.classList.toggle("cb", on); }

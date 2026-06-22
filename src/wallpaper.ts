@@ -413,45 +413,115 @@ function startBloom(m: CastFire) {
   bloomRaf = requestAnimationFrame(anim);
 }
 
-// ---- bird sigil egg: a sumi-ink bird glides across the wallpaper (Rust cast:bird).
+// ---- bird sigil egg: a conjured bird BORN FROM INK (WHA "magic is drawn"). It
+// glides in on a banking arc, beats asymmetric tapered-ink wings in flap→glide
+// phrasing, trails sumi ink tinted toward the viz hue, then dissolves into ink-motes
+// on exit. Day = near-black sumi; night = parchment-cream with a faint gold glow-ink.
 let birdRaf = 0;
-function drawBird(ctx: CanvasRenderingContext2D, x: number, y: number, dir: number, flap: number, s: number, alpha: number) {
+
+// A tapered curved brush-ribbon (filled): from A (half-width wa) through control C
+// to B (half-width wb). The single primitive every part of the bird is drawn with.
+function inkRibbon(ctx: CanvasRenderingContext2D, ax: number, ay: number, cx: number, cy: number, bx: number, by: number, wa: number, wb: number) {
+  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len, py = dx / len, wm = (wa + wb) / 2;
+  ctx.beginPath();
+  ctx.moveTo(ax + px * wa, ay + py * wa);
+  ctx.quadraticCurveTo(cx + px * wm, cy + py * wm, bx + px * wb, by + py * wb);
+  ctx.quadraticCurveTo(cx - px * wm, cy - py * wm, ax - px * wa, ay - py * wa);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Front-view bird (body + head + two wings + forked tail) in the current fillStyle.
+// `wingY` is the wing-tip height (− up, + down); fl/fr foreshorten each wing for bank.
+function birdBody(ctx: CanvasRenderingContext2D, wingY: number, fl: number, fr: number, g: number) {
+  inkRibbon(ctx, 0, -6 * g, 0, 1 * g, 0, 8 * g, 1.7 * g, 0.5 * g); // torso (head→tail)
+  ctx.beginPath(); ctx.ellipse(0, -6.4 * g, 2.4 * g, 2.7 * g, 0, 0, 6.2832); ctx.fill(); // head
+  const cy = (-2 + (wingY + 2) * 0.6) * g; // wing curve control height
+  inkRibbon(ctx, 2.4 * g, -2 * g, 12 * g * fr, cy, 22 * g * fr, wingY * g, 2.8 * g, 0.4 * g); // right wing
+  inkRibbon(ctx, -2.4 * g, -2 * g, -12 * g * fl, cy, -22 * g * fl, wingY * g, 2.8 * g, 0.4 * g); // left wing
+  inkRibbon(ctx, 0, 6 * g, -1.5 * g, 9 * g, -3.5 * g, 12 * g, 1.6 * g, 0.3 * g); // tail fork
+  inkRibbon(ctx, 0, 6 * g, 1.5 * g, 9 * g, 3.5 * g, 12 * g, 1.6 * g, 0.3 * g);
+}
+
+function drawBird(ctx: CanvasRenderingContext2D, x: number, y: number, wingY: number, bank: number, s: number, alpha: number, accent: { color: string; alpha: number }) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(dir * s, s);
+  ctx.rotate(bank);
+  ctx.scale(s, s);
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-  ctx.strokeStyle = "rgba(18,14,26,.9)"; // inky body line
-  ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.shadowColor = pal.teal; ctx.shadowBlur = 9;
-  const wing = 13 + flap * 7; // wings rise/fall with the flap
-  ctx.beginPath();
-  ctx.moveTo(-19, 0);
-  ctx.quadraticCurveTo(-9, -wing, 0, -2);  // left wing
-  ctx.quadraticCurveTo(9, -wing, 19, 0);   // right wing
-  ctx.stroke();
+  const fr = Math.max(0.55, 1 - Math.max(0, bank) * 1.8); // banking foreshortens the far wing
+  const fl = Math.max(0.55, 1 - Math.max(0, -bank) * 1.8);
+  if (accent.alpha > 0) { // night gold glow-ink (slightly larger) / day faint paper offset
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha)) * accent.alpha;
+    ctx.fillStyle = accent.color;
+    if (curMode !== "night") ctx.translate(1.2, 1.8);
+    birdBody(ctx, wingY, fl, fr, curMode === "night" ? 1.16 : 1.0);
+    ctx.restore();
+  }
+  ctx.fillStyle = curMode === "night" ? "#E8DEC9" : "#1A1714"; // sumi body
+  birdBody(ctx, wingY, fl, fr, 1.0);
   ctx.restore();
-  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
 }
+
 function startBird() {
   const c = bloom as CV;
   const ctx = c.getContext("2d")!;
   const w = c._cssw || 0, h = c._cssh || 0;
   if (!w || !h) return;
+  const reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
   const dir = Math.random() < 0.5 ? 1 : -1;
-  const y0 = h * (0.18 + Math.random() * 0.28);
-  const s = Math.max(1, uiScale) * 1.2;
-  const dur = 5200;
+  const y0 = h * (0.16 + Math.random() * 0.30);
+  const s = Math.max(1, uiScale) * 1.25;
+  const dur = 7000 + Math.random() * 1800;
+  const arc = h * (0.10 + Math.random() * 0.06);
+  const drift = 44 * s;
+  const accent = curMode === "night" ? { color: pal.gold, alpha: 0.45 } : { color: "#6B5E4A", alpha: 0.12 };
+  const trail: { x: number; y: number; a: number }[] = [];
+  let motes: { x: number; y: number; vx: number; vy: number; r: number; a: number }[] = [];
+  let prevX = 0, prevY = 0, primed = false;
   const start = performance.now();
   cancelAnimationFrame(birdRaf);
   const anim = (now: number) => {
-    const p = (now - start) / dur;
+    const t = now - start, p = t / dur;
     ctx.clearRect(0, 0, w, h);
-    if (p >= 1) return; // gone
-    const x = dir > 0 ? -50 + p * (w + 100) : w + 50 - p * (w + 100);
-    const y = y0 + Math.sin(p * Math.PI * 3) * 24 * s - p * 50; // gentle glide, drifting up
-    const flap = Math.sin(now * 0.013);
-    const fade = Math.min(1, Math.sin(p * Math.PI) * 1.7); // fade in then out
-    drawBird(ctx, x, y, dir, flap, s, fade);
+    if (p >= 1.3) return; // gone (after the exit motes settle)
+    const ep = Math.min(1, p);
+    const ease = ep < 0.5 ? 2 * ep * ep : 1 - Math.pow(-2 * ep + 2, 2) / 2; // easeInOutQuad
+    const x = dir > 0 ? -60 + ease * (w + 120) : w + 60 - ease * (w + 120);
+    const y = y0 - Math.sin(ep * Math.PI) * arc - ep * drift; // banking arc + drift up
+    const vx = x - prevX, vy = y - prevY;
+    prevX = x; prevY = y;
+    const bank = reduced || !primed ? (dir > 0 ? 0.05 : -0.05) : Math.max(-0.22, Math.min(0.22, Math.atan2(vy, Math.abs(vx) + 0.001) * 0.55 + (dir > 0 ? 0.05 : -0.05)));
+    primed = true;
+    // wingbeat: slow flap↔glide phrasing × an asymmetric beat (fast down, slow up)
+    const flapAmp = reduced ? 0.25 : 0.45 + 0.55 * Math.max(0, Math.cos(t * 0.0017));
+    const bp = (t * 0.011) % 1;
+    const wp = bp < 0.35 ? bp / 0.35 : 1 - (bp - 0.35) / 0.65; // 0=up .. 1=down
+    const wingY = (-18 + 26 * wp) * flapAmp;
+    let alpha = 1;
+    if (ep < 0.12) alpha = ep / 0.12;                 // conjuring-on (wet-stroke reveal)
+    else if (p > 0.9) alpha = Math.max(0, (1 - p) / 0.1); // dissolve toward ink
+    // ink-trail (tinted toward the viz hue)
+    if (p < 0.92 && !reduced) { trail.push({ x, y: y + 9 * s, a: 0.2 }); if (trail.length > 12) trail.shift(); }
+    ctx.save();
+    for (const tp of trail) { tp.a -= 0.016; if (tp.a <= 0) continue; ctx.globalAlpha = tp.a; ctx.fillStyle = pal.teal; ctx.beginPath(); ctx.arc(tp.x, tp.y, 2.1 * s, 0, 6.2832); ctx.fill(); }
+    ctx.restore();
+    // spawn exit ink-motes once, near the end
+    if (p >= 0.9 && motes.length === 0 && !reduced) {
+      const n = 8 + Math.floor(Math.random() * 5);
+      for (let i = 0; i < n; i++) motes.push({ x, y, vx: (Math.random() - 0.5) * 34, vy: -8 - Math.random() * 30, r: 1.4 + Math.random() * 2.4, a: 0.55 });
+    }
+    if (p <= 1.02) drawBird(ctx, x, y, wingY, bank, s, alpha, accent);
+    if (motes.length) {
+      ctx.save(); ctx.fillStyle = pal.teal;
+      for (const m of motes) { m.x += m.vx / 60; m.y += m.vy / 60; m.vy += 0.4; m.a -= 0.012; m.r *= 0.985; if (m.a <= 0) continue; ctx.globalAlpha = m.a; ctx.beginPath(); ctx.arc(m.x, m.y, m.r * s, 0, 6.2832); ctx.fill(); }
+      ctx.restore();
+      motes = motes.filter((m) => m.a > 0);
+    }
+    ctx.globalAlpha = 1;
     birdRaf = requestAnimationFrame(anim);
   };
   birdRaf = requestAnimationFrame(anim);

@@ -1345,6 +1345,15 @@ fn preview_silvereve(app: AppHandle) -> String {
     "previewing silver eve".into()
 }
 
+/// Preview the cursed-misfire Petrification on demand. In play it's a rare (~13%)
+/// roll, so this dev hook shows the crystal-eruption + time-stop for polishing it.
+#[tauri::command]
+fn preview_petrify(app: AppHandle) -> String {
+    open_casting_impl(&app); // bring up the casting slate on the active monitor
+    let _ = app.emit("preview:petrify", ());
+    "previewing misfire".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1499,6 +1508,7 @@ pub fn run() {
             dismiss_welcome,
             conjure_bird,
             preview_silvereve,
+            preview_petrify,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
