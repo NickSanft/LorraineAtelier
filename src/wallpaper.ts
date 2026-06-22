@@ -157,6 +157,7 @@ function updateDockDisplay(mode: Mode, inkPercent?: number) {
       `<span style="font-size:calc(19px * var(--ui-scale,1));line-height:1;color:var(--c-gold)">${isNight ? "☾" : "☀"}</span>` +
       `<span style="font-family:'Cinzel',serif;font-size:calc(8px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">${isNight ? "Night" : "Day"}</span>`;
     scheduleHitRects(); // the mode indicator width changed → dock layout shifted
+    scheduleSizes();
   }
   if (inkLevelBar && inkPercent != null) {
     inkLevelBar.style.height = Math.max(0, Math.min(100, inkPercent)) + "%";
@@ -213,7 +214,60 @@ const clockEl = document.getElementById("clock");
 const sealEl = document.getElementById("seal");
 const topStripEl = document.getElementById("topstrip");
 const dockEl = document.getElementById("dock");
+const titlePillEl = document.getElementById("titlePill");
+const glyphsPillEl = document.getElementById("glyphsPill");
 let isPrimary: boolean | null = null;
+
+// ---- widget layout customization (control window edits {x%, y%, scale} per widget) ----
+// An override repositions a widget (top-left anchor, % of the work area) and scales it
+// on top of the auto monitor-height ui-scale. No override = its built-in placement.
+interface WidgetPos { x: number; y: number; scale: number; vertical?: boolean }
+const LAYOUT_WIDGETS: Record<string, HTMLElement | null> = { clock: clockEl, seal: sealEl, dock: dockEl, titlePill: titlePillEl, glyphsPill: glyphsPillEl };
+const widgetOrigStyle: Record<string, string> = {};
+for (const [name, el] of Object.entries(LAYOUT_WIDGETS)) if (el) widgetOrigStyle[name] = el.getAttribute("style") || "";
+let widgetLayout: Record<string, WidgetPos> = {};
+function applyWidgetLayout() {
+  for (const [name, el] of Object.entries(LAYOUT_WIDGETS)) {
+    if (!el) continue;
+    const l = widgetLayout[name];
+    const disp = el.style.display; // preserve primary/secondary visibility
+    if (l) {
+      el.style.left = l.x + "%";
+      el.style.top = l.y + "%";
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+      el.style.transformOrigin = "top left";
+      el.style.transform = `scale(${(uiScale * (l.scale || 1)).toFixed(3)})`;
+    } else if (widgetOrigStyle[name] != null) {
+      el.setAttribute("style", widgetOrigStyle[name]);
+    }
+    if (name === "dock") el.classList.toggle("dock-vertical", !!(l && l.vertical));
+    el.style.display = disp;
+  }
+  scheduleSizes();
+}
+listen<Record<string, WidgetPos>>("settings:widgetLayout", (e) => { widgetLayout = e.payload || {}; applyWidgetLayout(); });
+
+// Report each widget's actual rendered size (% of the work area) + the work-area
+// aspect, so the control's layout preview can draw chips at true proportions. Only
+// the primary monitor (which shows the widgets) reports.
+function reportWidgetSizes() {
+  if (!isPrimary) return;
+  const rr = root.getBoundingClientRect();
+  const rw = rr.width || 1, rh = rr.height || 1;
+  const sizes: Record<string, { x: number; y: number; w: number; h: number }> = {};
+  for (const [name, el] of Object.entries(LAYOUT_WIDGETS)) {
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    sizes[name] = { x: ((r.left - rr.left) / rw) * 100, y: ((r.top - rr.top) / rh) * 100, w: (r.width / rw) * 100, h: (r.height / rh) * 100 };
+  }
+  void invoke("report_widget_sizes", { sizes, aspect: rw / rh }).catch(() => {});
+}
+let sizesRaf = 0;
+function scheduleSizes() {
+  cancelAnimationFrame(sizesRaf);
+  sizesRaf = requestAnimationFrame(() => requestAnimationFrame(reportWidgetSizes));
+}
 // This webview's own label. Rust emits each monitor's buddy message to its slot
 // label AND stamps the label into the payload; we act only on our own (Tauri 2.11
 // `EventTarget::Any` listeners otherwise receive every window's emit).
@@ -252,6 +306,7 @@ function applyPrimary(primary: boolean) {
   if (topStripEl) topStripEl.style.display = primary ? "flex" : "none";
   if (dockEl) dockEl.style.display = primary ? "flex" : "none";
   scheduleHitRects(); // dock appeared/disappeared → republish (or clear) hit-rects
+  scheduleSizes(); // widgets shown/hidden → re-report sizes to the layout preview
 }
 
 // ---- taskbar-aware safe area ----
@@ -501,9 +556,10 @@ const glyphCountEl = document.getElementById("glyphcount");
 const BASE_ELEMENTS = ["fire", "water", "wind", "earth"];
 function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
+  scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos> }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 // A new cast/secret updates the inscribed count.
@@ -515,6 +571,7 @@ window.addEventListener("resize", () => {
   sizeAll();
   scheduleHitRects();
   pickWall(); // the window was just sized to its monitor → re-pick the rendition
+  applyWidgetLayout(); // ui-scale changed → reapply custom widget scale
 });
 updateClock();
 setInterval(updateClock, 1000);

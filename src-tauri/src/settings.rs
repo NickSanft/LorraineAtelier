@@ -48,6 +48,23 @@ impl Default for Gift {
     }
 }
 
+/// A widget's user-set placement: top-left position as a percentage of the work
+/// area + a size multiplier (on top of the auto monitor-height ui-scale).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WidgetPos {
+    pub x: f64,
+    pub y: f64,
+    pub scale: f64,
+    pub vertical: bool, // dock only: stack the pills vertically instead of in a row
+}
+
+impl Default for WidgetPos {
+    fn default() -> Self {
+        Self { x: 0.0, y: 0.0, scale: 1.0, vertical: false }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
@@ -66,6 +83,7 @@ pub struct Settings {
     pub first_run: bool, // show the one-time welcome until dismissed
     pub colorblind: bool, // swap element colors to a colorblind-safe palette
     pub buddy_sprite: String, // custom brushbuddy image (path/URL); empty = built-in sprite
+    pub widget_layout: HashMap<String, WidgetPos>, // per-widget placement override
 }
 
 impl Default for Settings {
@@ -86,6 +104,7 @@ impl Default for Settings {
             first_run: true,
             colorblind: false,
             buddy_sprite: String::new(),
+            widget_layout: HashMap::new(),
         }
     }
 }
@@ -198,6 +217,16 @@ pub fn set_colorblind(v: bool) {
 
 pub fn set_buddy_sprite(src: String) {
     store().lock().unwrap().buddy_sprite = src;
+    save();
+}
+
+pub fn set_widget_layout(name: String, x: f64, y: f64, scale: f64, vertical: bool) {
+    store().lock().unwrap().widget_layout.insert(name, WidgetPos { x, y, scale, vertical });
+    save();
+}
+
+pub fn clear_widget_layout(name: &str) {
+    store().lock().unwrap().widget_layout.remove(name);
     save();
 }
 

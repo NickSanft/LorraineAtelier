@@ -63,6 +63,7 @@ interface SettingsDto {
   firstRun: boolean;
   colorblind: boolean;
   buddySprite: string;
+  widgetLayout: Record<string, { x: number; y: number; scale: number; vertical?: boolean }>;
 }
 
 async function main() {
@@ -215,6 +216,98 @@ async function main() {
     buddySpriteInput.value = "";
     invoke("set_buddy_sprite", { src: "" }).then(() => append("buddy sprite → built-in"));
   });
+
+  // ---- Widget layout editor: drag chips in a monitor preview + a size slider ----
+  interface WPos { x: number; y: number; scale: number; vertical?: boolean }
+  const LAYOUT_DEFAULTS: Record<string, { x: number; y: number }> = { clock: { x: 3, y: 7 }, seal: { x: 4, y: 55 }, dock: { x: 28, y: 86 }, titlePill: { x: 3, y: 2 }, glyphsPill: { x: 68, y: 2 } };
+  const stage = document.getElementById("layoutStage")!;
+  const selNameEl = document.getElementById("selWidgetName")!;
+  const selScaleEl = document.getElementById("selWidgetScale") as HTMLInputElement;
+  const selScaleOut = document.getElementById("selWidgetScaleOut")!;
+  const orientBtn = document.getElementById("dockOrient")!;
+  let widgetLayout: Record<string, WPos> = {};
+  let selWidget = "clock";
+  const chips: Record<string, HTMLElement> = {};
+  // The wallpaper reports each widget's ACTUAL geometry (% of the work area) so the
+  // preview is WYSIWYG — used for size always, and for position when un-customized.
+  let reported: Record<string, { x: number; y: number; w: number; h: number }> = {};
+  let draggingName = "";
+  const wPos = (n: string): WPos => {
+    const l = widgetLayout[n];
+    if (l) return l;
+    const rep = reported[n];
+    return { x: rep ? rep.x : LAYOUT_DEFAULTS[n].x, y: rep ? rep.y : LAYOUT_DEFAULTS[n].y, scale: 1, vertical: false };
+  };
+  function renderChips() {
+    for (const n in chips) {
+      const p = wPos(n), rep = reported[n];
+      chips[n].style.width = (rep ? Math.max(3, rep.w) : 13) + "%";
+      chips[n].style.height = (rep ? Math.max(2.5, rep.h) : 8) + "%";
+      if (n !== draggingName) { chips[n].style.left = p.x + "%"; chips[n].style.top = p.y + "%"; }
+    }
+  }
+  let pushTimer = 0;
+  const pushLayout = (n: string) => {
+    const p = wPos(n);
+    clearTimeout(pushTimer);
+    pushTimer = window.setTimeout(() => { invoke("set_widget_layout", { name: n, x: p.x, y: p.y, scale: p.scale, vertical: !!p.vertical }); }, 60);
+  };
+  function selectWidget(n: string) {
+    selWidget = n; selNameEl.textContent = n;
+    const p = wPos(n); selScaleEl.value = String(p.scale); selScaleOut.textContent = p.scale.toFixed(2);
+    orientBtn.style.display = n === "dock" ? "inline-block" : "none";
+    orientBtn.textContent = p.vertical ? "Make horizontal" : "Make vertical";
+    for (const k in chips) chips[k].style.boxShadow = k === n ? "0 0 0 2px var(--gold)" : "none";
+  }
+  orientBtn.addEventListener("click", () => {
+    const p = wPos("dock"); widgetLayout["dock"] = { x: p.x, y: p.y, scale: p.scale, vertical: !p.vertical };
+    pushLayout("dock"); selectWidget("dock");
+  });
+  function startDrag(e: PointerEvent, n: string) {
+    e.preventDefault(); selectWidget(n); draggingName = n;
+    const chip = chips[n]; chip.setPointerCapture(e.pointerId); chip.style.cursor = "grabbing";
+    const sr0 = stage.getBoundingClientRect(); const cr0 = chip.getBoundingClientRect();
+    const offX = ((e.clientX - cr0.left) / sr0.width) * 100; // grab offset within the chip
+    const offY = ((e.clientY - cr0.top) / sr0.height) * 100;
+    const onMove = (ev: PointerEvent) => {
+      const r = stage.getBoundingClientRect();
+      const x = Math.max(0, Math.min(99, ((ev.clientX - r.left) / r.width) * 100 - offX));
+      const y = Math.max(0, Math.min(99, ((ev.clientY - r.top) / r.height) * 100 - offY));
+      chip.style.left = x + "%"; chip.style.top = y + "%";
+      const cur = wPos(n);
+      widgetLayout[n] = { x, y, scale: cur.scale, vertical: cur.vertical };
+      pushLayout(n);
+    };
+    const onUp = (ev: PointerEvent) => { draggingName = ""; chip.releasePointerCapture(ev.pointerId); chip.style.cursor = "grab"; chip.removeEventListener("pointermove", onMove); chip.removeEventListener("pointerup", onUp); };
+    chip.addEventListener("pointermove", onMove); chip.addEventListener("pointerup", onUp);
+  }
+  function buildLayout() {
+    stage.innerHTML = ""; for (const k in chips) delete chips[k];
+    for (const n of Object.keys(LAYOUT_DEFAULTS)) {
+      const chip = document.createElement("div");
+      chip.textContent = n.replace("Pill", "");
+      chip.style.cssText = `position:absolute;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:#efe6d2;background:rgba(232,184,74,.16);border:1px solid var(--gold);border-radius:5px;cursor:grab;user-select:none;overflow:hidden;box-sizing:border-box;touch-action:none;`;
+      chip.addEventListener("pointerdown", (e) => startDrag(e, n));
+      stage.appendChild(chip); chips[n] = chip;
+    }
+    renderChips();
+    selectWidget(selWidget);
+  }
+  selScaleEl.addEventListener("input", () => {
+    const s = parseFloat(selScaleEl.value); selScaleOut.textContent = s.toFixed(2);
+    const p = wPos(selWidget); widgetLayout[selWidget] = { x: p.x, y: p.y, scale: s, vertical: p.vertical }; pushLayout(selWidget);
+  });
+  document.getElementById("resetWidget")!.addEventListener("click", () => {
+    delete widgetLayout[selWidget];
+    invoke("reset_widget_layout", { name: selWidget }).then(() => append(`reset ${selWidget} layout`));
+    buildLayout();
+  });
+  interface SizesDto { sizes: Record<string, { x: number; y: number; w: number; h: number }>; aspect: number }
+  Promise.all([
+    invoke<SettingsDto>("get_settings").then((s) => { widgetLayout = s.widgetLayout || {}; }).catch(() => {}),
+    invoke<SizesDto>("get_widget_sizes").then((ws) => { reported = ws.sizes || {}; if (ws.aspect > 0) stage.style.aspectRatio = String(ws.aspect); }).catch(() => {}),
+  ]).then(() => buildLayout());
+  await event.listen<SizesDto>("widget:sizes", (e) => { reported = e.payload.sizes || {}; if (e.payload.aspect > 0) stage.style.aspectRatio = String(e.payload.aspect); renderChips(); });
 
   document.getElementById("preview")!.addEventListener("click", () => invoke("preview_storybook").then(() => append("previewing dedication")));
   document.getElementById("previewSilver")!.addEventListener("click", () => invoke("preview_silvereve").then(() => append("previewing Silver Eve")));

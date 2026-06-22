@@ -104,6 +104,21 @@
       <div class="hint">PNG / SVG / GIF — a local file under your home or app-data folder, or an http(s) URL. Your sprite flips with the walk direction; only the built-in one blinks.</div>
     </div>
 
+    <!-- Widget layout: drag the clock/seal in the preview; slider resizes the selected one -->
+    <div class="panel">
+      <h2>Widget layout</h2>
+      <div id="layoutStage" style="position:relative; width:100%; aspect-ratio:16/9; background:#0d0a14; border:1px solid var(--edge); border-radius:8px; overflow:hidden;"></div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <span class="bn" id="selWidgetName" style="width:auto; min-width:48px;">clock</span>
+        <span class="hint">size</span>
+        <input type="range" id="selWidgetScale" min="0.4" max="2.2" step="0.05" value="1" style="flex:1; min-width:0;" />
+        <span class="hint" id="selWidgetScaleOut" style="width:32px;">1.00</span>
+        <button id="dockOrient" class="test" style="display:none">Make vertical</button>
+        <button id="resetWidget" class="test">Reset</button>
+      </div>
+      <div class="hint">Drag a widget to move it, select one and use the slider to resize. The dock can be made vertical. Applies to the primary monitor.</div>
+    </div>
+
     <div class="panel">
       <h2>Wallpaper</h2>
       <div class="dev">

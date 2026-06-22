@@ -1098,6 +1098,60 @@ fn set_buddy_sprite(app: AppHandle, src: String) -> String {
     format!("buddy_sprite={src}")
 }
 
+/// Set a widget's placement (x/y % of the work area + size multiplier). Persisted +
+/// broadcast (whole map) so every wallpaper applies it live.
+#[tauri::command]
+fn set_widget_layout(app: AppHandle, name: String, x: f64, y: f64, scale: f64, vertical: bool) -> String {
+    settings::set_widget_layout(name, x, y, scale, vertical);
+    let _ = app.emit("settings:widgetLayout", settings::get().widget_layout);
+    "ok".into()
+}
+
+/// Reset a widget back to its built-in placement.
+#[tauri::command]
+fn reset_widget_layout(app: AppHandle, name: String) -> String {
+    settings::clear_widget_layout(&name);
+    let _ = app.emit("settings:widgetLayout", settings::get().widget_layout);
+    "ok".into()
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WidgetSize {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+#[derive(Clone, serde::Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WidgetSizes {
+    sizes: std::collections::HashMap<String, WidgetSize>,
+    aspect: f64,
+}
+
+fn widget_sizes_store() -> &'static std::sync::Mutex<WidgetSizes> {
+    static S: std::sync::OnceLock<std::sync::Mutex<WidgetSizes>> = std::sync::OnceLock::new();
+    S.get_or_init(|| std::sync::Mutex::new(WidgetSizes::default()))
+}
+
+/// The (primary) wallpaper reports each widget's rendered size (% of the work area)
+/// + the work-area aspect, so the control's layout preview can draw true-proportion
+/// chips. Stored + broadcast so the control updates live.
+#[tauri::command]
+fn report_widget_sizes(app: AppHandle, sizes: std::collections::HashMap<String, WidgetSize>, aspect: f64) {
+    let ws = WidgetSizes { sizes, aspect };
+    *widget_sizes_store().lock().unwrap() = ws.clone();
+    let _ = app.emit("widget:sizes", ws);
+}
+
+/// The control window reads the last-reported widget sizes when building its preview.
+#[tauri::command]
+fn get_widget_sizes() -> WidgetSizes {
+    widget_sizes_store().lock().unwrap().clone()
+}
+
 /// The current persisted settings (mode / mappings / pause) for the control UI
 /// and the wallpaper's initial day/night state.
 #[tauri::command]
@@ -1289,6 +1343,10 @@ pub fn run() {
             set_hit_rects,
             set_colorblind,
             set_buddy_sprite,
+            set_widget_layout,
+            reset_widget_layout,
+            report_widget_sizes,
+            get_widget_sizes,
             get_settings,
             set_mode,
             toggle_mode,
