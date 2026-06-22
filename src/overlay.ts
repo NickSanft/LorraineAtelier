@@ -184,8 +184,8 @@ async function handleRing(stroke: Pt[]) {
     showToast("A gap remains — dot it to ignite.", "◌");
     return;
   }
-  if (!ring.encloses) { showToast("The ring must enclose the sigil.", "◌"); strokes.pop(); return; }
-  showToast("The ring is broken — the spell lies dormant.", "◌"); strokes.pop();
+  if (!ring.encloses) { failRing("The ring must enclose the sigil — it fizzles."); return; }
+  failRing("The ring broke — the seal fizzles, dormant.");
 }
 
 function ignitePrepared() {
@@ -285,6 +285,11 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
   const start = performance.now();
   const dur = score >= 70 ? 1300 : score >= 42 ? 1500 : 1700;
   const sloppy = score < 42;
+  // A cursed misfire blooms CORRUPTED: a sickly stone-violet, jittered like a
+  // brimmed-cap scrawl, then Petrification creeps in (below).
+  const corrupt = fire.cursed;
+  const main = corrupt ? "#8a8290" : inverse ? GOLD : TEAL;
+  const rayCol = corrupt ? "#9a9088" : GOLD;
   const anim = (now: number) => {
     const p = Math.min(1, (now - start) / dur);
     cctx.clearRect(0, 0, W, H);
@@ -296,36 +301,112 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
     cctx.translate(center.x + jx, center.y + jy);
     cctx.rotate((inverse ? -1 : 1) * ease * 1.3 + (sideways ? Math.sin(p * 8) * 0.12 * (1 - p) : 0));
     for (let k = 0; k < 3; k++) {
-      const rr = (40 + k * 46) * ease * (sloppy ? 1 + 0.12 * Math.sin(now * 0.05 + k) : 1);
-      cctx.beginPath(); cctx.strokeStyle = inverse ? GOLD : TEAL; cctx.globalAlpha = (1 - p) * 0.9;
+      const jit = corrupt ? (Math.random() - 0.5) * 10 : 0;
+      const rr = (40 + k * 46) * ease * (sloppy ? 1 + 0.12 * Math.sin(now * 0.05 + k) : 1) + jit;
+      cctx.beginPath(); cctx.strokeStyle = main; cctx.globalAlpha = (1 - p) * 0.9;
       cctx.lineWidth = 2.4; cctx.shadowColor = cctx.strokeStyle; cctx.shadowBlur = 18 * (1 - p);
-      cctx.arc(0, 0, rr, 0, 6.2832); cctx.stroke();
+      cctx.arc(0, 0, Math.max(1, rr), 0, 6.2832); cctx.stroke();
     }
     const ns = 10;
     for (let i = 0; i < ns; i++) {
       const a = (i / ns) * 6.2832; const len = 110 * ease;
-      cctx.beginPath(); cctx.strokeStyle = GOLD; cctx.globalAlpha = (1 - p) * 0.8; cctx.lineWidth = 1.4;
+      cctx.beginPath(); cctx.strokeStyle = rayCol; cctx.globalAlpha = (1 - p) * 0.8; cctx.lineWidth = 1.4;
       cctx.moveTo(0, 0); cctx.lineTo(Math.cos(a) * len, Math.sin(a) * len); cctx.stroke();
     }
     const gs = 18 + ease * 42;
-    cctx.globalAlpha = Math.max(0, 1 - p * 1.05); cctx.strokeStyle = inverse ? GOLD : TEAL;
+    cctx.globalAlpha = Math.max(0, 1 - p * 1.05); cctx.strokeStyle = main;
     cctx.lineWidth = 3; cctx.shadowColor = cctx.strokeStyle; cctx.shadowBlur = 24 * (1 - p);
     drawGlyphPath(cctx, sigil, gs); cctx.stroke();
     const fl = cctx.createRadialGradient(0, 0, 0, 0, 0, 220);
-    fl.addColorStop(0, (inverse ? "rgba(232,184,74," : "rgba(47,214,198,") + (0.5 * (1 - p)).toFixed(3) + ")");
+    fl.addColorStop(0, (corrupt ? "rgba(138,130,144," : inverse ? "rgba(232,184,74," : "rgba(47,214,198,") + (0.5 * (1 - p)).toFixed(3) + ")");
     fl.addColorStop(1, "rgba(0,0,0,0)");
     cctx.globalAlpha = 1; cctx.fillStyle = fl; cctx.beginPath(); cctx.arc(0, 0, 220, 0, 6.2832); cctx.fill();
     cctx.restore(); cctx.globalAlpha = 1; cctx.shadowBlur = 0;
     if (p < 1) { bloomRaf = requestAnimationFrame(anim); }
     else {
-      blooming = false;
       strokes = []; curStroke = null; // clear the slate so the idle loop shows it empty
       cctx.clearRect(0, 0, W, H);
-      showToast(fire.message, fire.icon);
-      setTimeout(hide, fire.cursed ? 950 : 700);
+      if (fire.cursed) {
+        // Petrification creeps over the slate, then recedes (blooming stays true so
+        // the idle loop doesn't draw over it); only then dismiss.
+        petrify(() => { blooming = false; showToast(fire.message, fire.icon); setTimeout(hide, 450); });
+      } else {
+        blooming = false;
+        showToast(fire.message, fire.icon);
+        setTimeout(hide, 700);
+      }
     }
   };
   bloomRaf = requestAnimationFrame(anim);
+}
+
+// Cursed misfire = a Brimmed-Cap backfire: stone-grey Petrification (the accidental
+// miscast that opens the manga) creeps over the slate from the seal, holds, then
+// recedes. Always harmless — it passes.
+function petrify(onDone: () => void) {
+  const start = performance.now();
+  const grow = 650, hold = 380, recede = 950, total = grow + hold + recede;
+  const cx = sigilCenter?.x ?? W / 2, cy = sigilCenter?.y ?? H / 2;
+  const maxR = Math.hypot(W, H) * 0.62;
+  const cracks = Array.from({ length: 9 }, (_, i) => ({
+    a: (i / 9) * 6.2832 + (Math.random() - 0.5) * 0.4,
+    segs: Array.from({ length: 4 }, (_, j) => ({ t: (j + 1) / 4, off: (Math.random() - 0.5) * 0.5 })),
+  }));
+  const anim = (now: number) => {
+    const t = now - start;
+    const cov = t < grow ? t / grow : t < grow + hold ? 1 : Math.max(0, 1 - (t - grow - hold) / recede);
+    const r = maxR * (t < grow ? t / grow : 1);
+    cctx.clearRect(0, 0, W, H);
+    const g = cctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, r));
+    g.addColorStop(0, `rgba(122,118,112,${(0.84 * cov).toFixed(3)})`);
+    g.addColorStop(0.7, `rgba(96,92,88,${(0.7 * cov).toFixed(3)})`);
+    g.addColorStop(1, "rgba(64,62,60,0)");
+    cctx.fillStyle = g; cctx.beginPath(); cctx.arc(cx, cy, Math.max(1, r), 0, 6.2832); cctx.fill();
+    cctx.strokeStyle = `rgba(38,36,34,${(0.55 * cov).toFixed(3)})`; cctx.lineWidth = 1.6; cctx.lineJoin = "round";
+    for (const cr of cracks) {
+      cctx.beginPath(); cctx.moveTo(cx, cy);
+      for (const s of cr.segs) {
+        const rr = r * 0.82 * s.t, ang = cr.a + s.off;
+        cctx.lineTo(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
+      }
+      cctx.stroke();
+    }
+    if (t < total) requestAnimationFrame(anim);
+    else { cctx.clearRect(0, 0, W, H); onDone(); }
+  };
+  requestAnimationFrame(anim);
+}
+
+// A gentle dud for a broken/unclosed ring — the seal sags into grey ink-motes and
+// dissipates WITHOUT firing (distinct from the cursed Petrification misfire above).
+function fizzle(onDone: () => void) {
+  blooming = true; // block input during the brief dud
+  const start = performance.now();
+  const dur = 620;
+  const c = sigilCenter ?? { x: W / 2, y: H / 2 };
+  const motes = Array.from({ length: 10 }, () => ({ a: Math.random() * 6.2832, spd: 0.5 + Math.random(), drift: (Math.random() - 0.5) * 0.7 }));
+  const anim = (now: number) => {
+    const p = Math.min(1, (now - start) / dur);
+    cctx.clearRect(0, 0, W, H);
+    cctx.save(); cctx.globalAlpha = 1 - p; renderStrokes(); cctx.restore();
+    for (const m of motes) {
+      const rr = p * 46 * m.spd;
+      const x = c.x + Math.cos(m.a) * rr * 0.4 + m.drift * rr;
+      const y = c.y - rr * 1.5;
+      cctx.beginPath(); cctx.fillStyle = `rgba(150,146,140,${((1 - p) * 0.5).toFixed(3)})`;
+      cctx.arc(x, y, 2.2 * (1 - p) + 0.5, 0, 6.2832); cctx.fill();
+    }
+    if (p < 1) requestAnimationFrame(anim);
+    else { blooming = false; cctx.clearRect(0, 0, W, H); onDone(); }
+  };
+  requestAnimationFrame(anim);
+}
+
+// A failed ring: toast + fizzle the broken ring away, then drop it and let the user
+// re-draw the ring (the sigil stays).
+function failRing(msg: string) {
+  showToast(msg, "◌");
+  fizzle(() => { strokes.pop(); drawCast(); });
 }
 
 let toastTimer = 0;
