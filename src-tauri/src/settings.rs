@@ -65,6 +65,7 @@ pub struct Settings {
     pub discovered: HashMap<String, u32>, // element key → times cast (Tower of Tomes)
     pub first_run: bool, // show the one-time welcome until dismissed
     pub colorblind: bool, // swap element colors to a colorblind-safe palette
+    pub buddy_sprite: String, // custom brushbuddy image (path/URL); empty = built-in sprite
 }
 
 impl Default for Settings {
@@ -84,6 +85,7 @@ impl Default for Settings {
             discovered: HashMap::new(),
             first_run: true,
             colorblind: false,
+            buddy_sprite: String::new(),
         }
     }
 }
@@ -191,6 +193,11 @@ pub fn set_first_run(v: bool) {
 
 pub fn set_colorblind(v: bool) {
     store().lock().unwrap().colorblind = v;
+    save();
+}
+
+pub fn set_buddy_sprite(src: String) {
+    store().lock().unwrap().buddy_sprite = src;
     save();
 }
 

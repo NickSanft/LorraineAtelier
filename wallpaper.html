@@ -87,18 +87,28 @@
         </div>
       </div>
 
-      <!-- BRUSHBUDDY (display only; an ink companion that wanders + naps) -->
-      <div id="buddy" style="position:absolute;left:0;top:0;width:48px;height:42px;z-index:22;pointer-events:none;will-change:transform;opacity:0;transition:opacity .35s ease">
-        <svg viewBox="0 0 48 42" style="width:100%;height:100%;overflow:visible">
-          <ellipse cx="24" cy="38" rx="13" ry="3" fill="rgba(8,6,14,.28)" />
-          <path d="M24 4 C12 4 8 16 8 24 C8 34 15 39 24 39 C33 39 40 34 40 24 C40 16 36 4 24 4 Z" fill="#1c2230" stroke="#0c0f18" stroke-width="1" />
-          <path d="M24 4 C20 7 18 12 19 16 C22 13 26 13 29 16 C30 12 28 7 24 4 Z" fill="#0c0f18" />
+      <!-- BRUSHBUDDY — the canon fudemushi: a fuzzy long-tailed ink-brush familiar.
+           SWAPPABLE: set the `buddySprite` setting to a path/URL to replace the
+           built-in sprite below with your own image (see #buddyImg + wallpaper.ts).
+           Skin colours are driven by the --buddy-* vars on this container. -->
+      <div id="buddy" style="position:absolute;left:0;top:0;width:48px;height:42px;z-index:22;pointer-events:none;will-change:transform;opacity:0;transition:opacity .35s ease;--body:#2a2420;--ink:#0e0a07;--rim:#d8cdb6;--patch:#473c30;--feet:#15110c">
+        <svg id="buddySvg" viewBox="0 0 48 42" style="width:100%;height:100%;overflow:visible">
+          <ellipse cx="22" cy="39.6" rx="18" ry="2.1" fill="rgba(10,7,4,.28)" />
+          <g stroke="var(--ink)" stroke-width="4" stroke-linecap="round"><path d="M19 30 l-0.5 6.6" /><path d="M26.5 31 l-0.3 6.8" /><path d="M34 31 l0.2 6.8" /><path d="M42 30 l0.6 6.4" /></g>
+          <g stroke="var(--body)" stroke-width="2.6" stroke-linecap="round"><path d="M19 30 l-0.5 6.6" /><path d="M26.5 31 l-0.3 6.8" /><path d="M34 31 l0.2 6.8" /><path d="M42 30 l0.6 6.4" /></g>
+          <g fill="var(--feet)"><ellipse cx="18.4" cy="37.6" rx="2.5" ry="1.7" /><ellipse cx="26" cy="38.1" rx="2.5" ry="1.7" /><ellipse cx="34.2" cy="38.1" rx="2.5" ry="1.7" /><ellipse cx="42.7" cy="37.3" rx="2.5" ry="1.7" /></g>
+          <path d="M30 23 C22 31 13 31 8 25 C6.4 22.6 6.4 19.4 8.6 17.4" fill="none" stroke="var(--ink)" stroke-width="14" stroke-linecap="round" />
+          <path d="M30 23 C22 31 13 31 8 25 C6.4 22.6 6.4 19.4 8.6 17.4" fill="none" stroke="var(--body)" stroke-width="11.4" stroke-linecap="round" />
+          <ellipse cx="36" cy="16" rx="10.6" ry="11.6" fill="var(--body)" stroke="var(--ink)" stroke-width="1.3" />
+          <g stroke="var(--rim)" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.85"><path d="M28 8 C32 5.6 38 5.6 43 9" /><path d="M22 16.5 C16 16.5 11 18.5 8.6 21.4" /></g>
+          <g stroke="var(--ink)" stroke-width="0.9" stroke-linecap="round" fill="none"><path d="M31 6 l-1 -3" /><path d="M36 4.4 l0 -3" /><path d="M41 6 l1.5 -2.6" /><path d="M22 15.6 l-1 -2.6" /><path d="M14 17.6 l-1.4 -2.4" /></g>
           <g id="buddyEyes">
-            <circle cx="19" cy="23" r="3.4" fill="#fff" /><circle cx="30" cy="23" r="3.4" fill="#fff" />
-            <circle cx="19.7" cy="23.6" r="1.7" fill="#10131c" /><circle cx="30.7" cy="23.6" r="1.7" fill="#10131c" />
+            <circle cx="32.5" cy="14.5" r="4" fill="#f4ecd9" stroke="var(--ink)" stroke-width="0.7" /><circle cx="40" cy="14.5" r="4" fill="#f4ecd9" stroke="var(--ink)" stroke-width="0.7" />
+            <circle cx="33" cy="15" r="2.5" fill="#1a140e" /><circle cx="40.5" cy="15" r="2.5" fill="#1a140e" />
+            <circle cx="32.2" cy="13.7" r="0.85" fill="#fff" /><circle cx="39.7" cy="13.7" r="0.85" fill="#fff" />
           </g>
-          <path d="M19 30 Q24 33 29 30" fill="none" stroke="#0c0f18" stroke-width="1.4" stroke-linecap="round" />
         </svg>
+        <img id="buddyImg" alt="" style="display:none;width:100%;height:100%;object-fit:contain;overflow:visible" />
       </div>
 
       <!-- WITCH'S BELT DOCK / DockMirror (display-only; no input handlers per hard platform constraint) -->

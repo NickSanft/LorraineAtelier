@@ -1,7 +1,7 @@
 export {}; // module scope
 
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 // Pure-logic core (DOM-free, unit-tested) extracted under src/atelier/*.
@@ -207,6 +207,8 @@ interface BuddyMsg {
 }
 const buddyEl = document.getElementById("buddy");
 const buddyEyes = document.getElementById("buddyEyes");
+const buddyImg = document.getElementById("buddyImg") as HTMLImageElement | null;
+const buddySvg = document.getElementById("buddySvg") as SVGElement | null;
 const clockEl = document.getElementById("clock");
 const sealEl = document.getElementById("seal");
 const topStripEl = document.getElementById("topstrip");
@@ -217,7 +219,26 @@ let isPrimary: boolean | null = null;
 // `EventTarget::Any` listeners otherwise receive every window's emit).
 const selfLabel = getCurrentWebviewWindow().label;
 if (buddyEl) buddyEl.style.transformOrigin = "24px 21px"; // sprite centre, for scaling
-if (buddyEyes) buddyEyes.style.transformOrigin = "center 23px";
+if (buddyEyes) buddyEyes.style.transformOrigin = "center 14px"; // new sprite's eye line
+
+// Swappable buddy sprite: an empty setting uses the built-in SVG; a path/URL shows
+// your own image instead (local paths go through Tauri's asset protocol). Falls back
+// to the built-in sprite if the custom image fails to load.
+function applyBuddySprite(src?: string) {
+  if (!buddyImg || !buddySvg) return;
+  const s = (src || "").trim();
+  if (s) {
+    const url = /^(https?:|\/|data:|asset:|tauri:|http:)/i.test(s) ? s : convertFileSrc(s);
+    buddyImg.onerror = () => { buddyImg.style.display = "none"; buddySvg.style.display = "block"; };
+    buddyImg.src = url;
+    buddyImg.style.display = "block";
+    buddySvg.style.display = "none";
+  } else {
+    buddyImg.style.display = "none";
+    buddySvg.style.display = "block";
+  }
+}
+listen<string>("settings:buddySprite", (e) => applyBuddySprite(e.payload));
 
 // Primary monitor shows the full widgets (clock + seal + top strip + dock);
 // secondary monitors stay calm — just art, ambient motes, glow, and the passing
@@ -481,8 +502,8 @@ const BASE_ELEMENTS = ["fire", "water", "wind", "earth"];
 function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number> }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 // A new cast/secret updates the inscribed count.

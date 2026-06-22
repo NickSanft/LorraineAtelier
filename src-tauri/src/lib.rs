@@ -1089,6 +1089,15 @@ fn set_colorblind(app: AppHandle, enabled: bool) -> String {
     format!("colorblind={enabled}")
 }
 
+/// Set a custom brushbuddy sprite (a file path or URL; empty restores the built-in).
+/// Persisted + broadcast so every wallpaper swaps the sprite live.
+#[tauri::command]
+fn set_buddy_sprite(app: AppHandle, src: String) -> String {
+    settings::set_buddy_sprite(src.clone());
+    let _ = app.emit("settings:buddySprite", src.clone());
+    format!("buddy_sprite={src}")
+}
+
 /// The current persisted settings (mode / mappings / pause) for the control UI
 /// and the wallpaper's initial day/night state.
 #[tauri::command]
@@ -1279,6 +1288,7 @@ pub fn run() {
             set_desktop_interactive,
             set_hit_rects,
             set_colorblind,
+            set_buddy_sprite,
             get_settings,
             set_mode,
             toggle_mode,

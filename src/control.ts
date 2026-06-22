@@ -62,6 +62,7 @@ interface SettingsDto {
   secretFound: boolean;
   firstRun: boolean;
   colorblind: boolean;
+  buddySprite: string;
 }
 
 async function main() {
@@ -203,6 +204,16 @@ async function main() {
     const s = await invoke<SettingsDto>("get_settings");
     buildBindings(s.mappings || {});
     append("bindings reset to defaults");
+  });
+
+  const buddySpriteInput = document.getElementById("buddySprite") as HTMLInputElement;
+  buddySpriteInput.value = (await invoke<SettingsDto>("get_settings").then((s) => s.buddySprite).catch(() => "")) || "";
+  buddySpriteInput.addEventListener("change", () => {
+    invoke("set_buddy_sprite", { src: buddySpriteInput.value.trim() }).then(() => append(`buddy sprite → ${buddySpriteInput.value.trim() || "built-in"}`));
+  });
+  document.getElementById("buddySpriteClear")!.addEventListener("click", () => {
+    buddySpriteInput.value = "";
+    invoke("set_buddy_sprite", { src: "" }).then(() => append("buddy sprite → built-in"));
   });
 
   document.getElementById("preview")!.addEventListener("click", () => invoke("preview_storybook").then(() => append("previewing dedication")));
