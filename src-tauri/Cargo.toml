@@ -1,6 +1,6 @@
 [package]
 name = "lorraine-atelier"
-version = "0.0.0"
+version = "1.0.0"
 description = "Witch Hat Atelier live wallpaper"
 edition = "2021"
 rust-version = "1.77"
