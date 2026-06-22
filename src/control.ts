@@ -53,6 +53,7 @@ interface SettingsDto {
   mappings: Record<string, string>;
   discovered: Record<string, number>;
   secretFound: boolean;
+  firstRun: boolean;
 }
 
 async function main() {
@@ -150,6 +151,14 @@ async function main() {
     interactOn = !!s.desktopInteractive;
     buildBindings(s.mappings || {});
     buildTomes(s);
+    if (s.firstRun) {
+      const wp = document.getElementById("welcomePanel")!;
+      wp.style.display = "flex";
+      document.getElementById("welcomeBegin")!.addEventListener("click", () => {
+        wp.style.display = "none";
+        invoke("dismiss_welcome").then(() => append("welcome dismissed"));
+      });
+    }
   } catch (e) {
     append("get_settings ✗ " + e);
   }

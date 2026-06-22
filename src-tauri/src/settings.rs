@@ -60,6 +60,7 @@ pub struct Settings {
     pub secret_found: bool,
     pub last_birthday_year: i32, // guard so the birthday surfaces at most once/year
     pub discovered: HashMap<String, u32>, // element key → times cast (Tower of Tomes)
+    pub first_run: bool, // show the one-time welcome until dismissed
 }
 
 impl Default for Settings {
@@ -76,6 +77,7 @@ impl Default for Settings {
             secret_found: false,
             last_birthday_year: 0,
             discovered: HashMap::new(),
+            first_run: true,
         }
     }
 }
@@ -173,6 +175,11 @@ pub fn reset_mappings() {
 
 pub fn set_secret_found(found: bool) {
     store().lock().unwrap().secret_found = found;
+    save();
+}
+
+pub fn set_first_run(v: bool) {
+    store().lock().unwrap().first_run = v;
     save();
 }
 

@@ -51,6 +51,20 @@
     <h1>Lorraine Atelier</h1>
     <div class="sub">とんがり帽子のアトリエ — control</div>
 
+    <!-- One-time first-run welcome (shown only when firstRun; dismissed by control.ts) -->
+    <div class="panel" id="welcomePanel" style="display:none;border-color:var(--gold);background:linear-gradient(180deg,#231b13,var(--panel))">
+      <h2>✦ Welcome to the Atelier</h2>
+      <div style="font-size:13px;line-height:1.65;color:#efe6d2">
+        For one who does not yet know — a <em>mono-shirazu</em>. Here, magic is not spoken but <strong>drawn</strong>.
+        <br /><br />
+        Press <strong>Ctrl + Alt + W</strong> to take up the pen and inscribe a sigil — △ fire, ▽ water, ○ wind, □ earth — then close the ring to seal it and a spell takes hold.
+        A small ink companion roams your desktop, and the dock along the bottom is yours to click (try the ❧ for your Tower of Tomes). Toggle ☾ Day / Night anytime.
+        <br /><br />
+        Welcome — your desk is now an atelier.
+      </div>
+      <div><button id="welcomeBegin" class="on">Begin ✦</button></div>
+    </div>
+
     <div class="panel">
       <h2>Atelier</h2>
       <div class="toggles">

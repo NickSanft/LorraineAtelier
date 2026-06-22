@@ -1111,6 +1111,13 @@ fn preview_storybook(app: AppHandle) -> String {
     "previewing dedication".into()
 }
 
+/// Dismiss the one-time first-run welcome (persists so it never shows again).
+#[tauri::command]
+fn dismiss_welcome() -> String {
+    settings::set_first_run(false);
+    "welcome dismissed".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1233,6 +1240,7 @@ pub fn run() {
             reset_mappings,
             mark_secret_found,
             preview_storybook,
+            dismiss_welcome,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
