@@ -291,8 +291,9 @@ Phases are ordered so the **riskiest remaining unknown (explorer-restart recover
 **Exit criteria:** ✅ installs per-user without admin/UAC, launches to tray, autostart `.lnk` on the spaced install path survives reboot; themed icon + v1.0.0 baked into the final installer.
 **Effort: S**
 
-### Phase 10 — Pre-gift QA pass
+### Phase 10 — Pre-gift QA pass  ✅ TECHNICAL QA VERIFIED (2026-06-22; personalization content pending)
 **Goal:** the gift works on the recipient's machine, first try, on the special day.
+**Verified 2026-06-22 (dev rig):** recognizer parity + unit tests pass; birthday auto-bloom fires + surfaces the storybook on the date (year-guarded); 4 spell bindings correct + test-cast launches the apps; sigil draw (5 sigils + CW/CCW rings) recognizes correctly; Attune reacts + falls back gracefully; pause-on-fullscreen on by default; **explorer-restart recovery** (killed `explorer.exe` → app survived, same PID, watchdog re-attached the wallpaper under the new WorkerW); fractional-DPI OK; idle GPU/CPU fixed (see above). Gotcha found: `cargo test` rebuilds the debug exe WITHOUT `--features custom-protocol` → all windows show "localhost refused" until rebuilt with the flag. Remaining = the **personalization content** (below): real dedication + birthday date.
 **Deliverables:** a QA checklist run on the dev rig + (ideally) a clean second machine.
 **Key tasks:**
 - Re-run the Phase-1 explorer-restart and Phase-2 fractional/mixed-DPI checks on a fresh install.
