@@ -72,6 +72,37 @@ fn log_startup(msg: &str) {
         let _ = writeln!(f, "{secs} {msg}");
     }
 }
+
+/// Append a bounded crash/diagnostic breadcrumb to crash.log (local only, no
+/// telemetry). Written by the panic hook and the per-tick `guard`s so an unattended
+/// failure on the recipient's machine leaves a clue — without ever taking the
+/// wallpaper down. Crash-resilience (Phase 13.4).
+fn log_crash(msg: &str) {
+    let Some(appdata) = std::env::var_os("APPDATA") else { return };
+    let dir = std::path::PathBuf::from(appdata).join("com.divora.lorraineatelier");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("crash.log");
+    if std::fs::metadata(&path).map(|m| m.len() > 64 * 1024).unwrap_or(false) {
+        let _ = std::fs::remove_file(&path);
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{secs} {msg}");
+    }
+}
+
+/// Run `f`, catching any panic so one bad tick can't take the app (or its recovery
+/// loop) down — the loop just continues next tick. The panic hook records the
+/// message/location; this records which guarded section recovered.
+fn guard<F: FnOnce()>(name: &str, f: F) {
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err() {
+        log_crash(&format!("recovered from a panic in '{name}'"));
+    }
+}
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// Number of wallpaper windows declared in tauri.conf.json (labels
@@ -501,8 +532,10 @@ fn spawn_watchdog(app: AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(600));
         let app2 = app.clone();
         let _ = app.run_on_main_thread(move || {
-            ensure_attached(&app2);
-            update_pause(&app2);
+            guard("watchdog", || {
+                ensure_attached(&app2);
+                update_pause(&app2);
+            });
         });
     });
 }
@@ -627,9 +660,11 @@ fn spawn_birthday_watch(app: AppHandle) {
     std::thread::spawn(move || loop {
         let a = app.clone();
         let _ = app.run_on_main_thread(move || {
-            check_birthday(&a);
-            #[cfg(windows)]
-            check_silvereve(&a);
+            guard("birthday-watch", || {
+                check_birthday(&a);
+                #[cfg(windows)]
+                check_silvereve(&a);
+            });
         });
         std::thread::sleep(std::time::Duration::from_secs(60));
     });
@@ -1555,6 +1590,15 @@ pub fn run() {
         std::env::current_dir().ok(),
         std::env::current_exe().ok()
     ));
+
+    // Record every panic (message + location + thread) to crash.log before it
+    // propagates — diagnostics for an unattended gift. Worker-thread panics now
+    // terminate only their thread (panic = unwind), and guarded recovery work carries
+    // on; this hook just leaves the breadcrumb. (Phase 13.4.)
+    std::panic::set_hook(Box::new(|info| {
+        let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
+        log_crash(&format!("PANIC [{thread}]: {info}"));
+    }));
 
     // Occlusion-disable is handled per-window via additionalBrowserArgs in
     // tauri.conf.json (identical on every window so they share one WebView2

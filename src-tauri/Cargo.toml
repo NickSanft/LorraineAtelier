@@ -57,5 +57,8 @@ mslnk = "0.1"
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# unwind (not abort) so a panic in a worker thread (buddy/watchdog/birthday/power)
+# terminates only that thread instead of the whole app, and catch_unwind guards on
+# the critical recovery work can recover a bad tick. Crash-resilience (Phase 13.4).
+panic = "unwind"
 strip = true

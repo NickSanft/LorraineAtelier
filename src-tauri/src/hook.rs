@@ -15,7 +15,8 @@
 //!
 //! Hot-path discipline (LowLevelHooksTimeout silently kills a slow hook): the proc
 //! does the bare minimum and hands work to a consumer thread via a channel. Never
-//! panic in the proc (we are `panic = "abort"`); only deref lParam on HC_ACTION.
+//! panic in the proc — a panic unwinding out of this `extern "system"` callback
+//! aborts the process at the FFI boundary; only deref lParam on HC_ACTION.
 
 #![cfg(windows)]
 
