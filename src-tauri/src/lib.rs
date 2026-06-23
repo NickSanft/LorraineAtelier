@@ -1489,6 +1489,13 @@ fn preview_quiet(app: AppHandle) -> String {
     "previewing quiet hours".into()
 }
 
+/// Preview the floatglow lanterns on demand (they normally fade in at dusk).
+#[tauri::command]
+fn preview_lanterns(app: AppHandle) -> String {
+    let _ = app.emit("gift:lanternpreview", ());
+    "previewing lanterns".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1656,6 +1663,7 @@ pub fn run() {
             preview_cast_hint,
             set_quiet_hours,
             preview_quiet,
+            preview_lanterns,
             set_viz_source,
             viz_status,
             casting::classify_sigil,

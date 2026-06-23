@@ -58,3 +58,70 @@ export function drawAmbient(
   }
   ctx.shadowBlur = 0;
 }
+
+// ---- Floatglow lanterns (13.3/13.5): a few soft, warm light-orbs that fade in at
+// dusk and drift slowly — a recognizable Witch-Hat-Atelier artifact, larger and
+// calmer than the ink-motes. Render-only, additive glow, breathe <=0.5 Hz.
+
+export interface Lantern {
+  x: number; // base position as a fraction of width (0..1)
+  y: number; // base position as a fraction of height (0..1)
+  r: number; // glow radius (px)
+  phase: number; // per-lantern phase offset
+  spd: number; // bob/breathe speed scale
+  drift: number; // horizontal drift scale
+}
+
+/** n lanterns scattered over the upper-middle of the scene (uses Math.random). */
+export function makeLanterns(n: number): Lantern[] {
+  const out: Lantern[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push({
+      x: 0.1 + Math.random() * 0.8,
+      y: 0.22 + Math.random() * 0.5,
+      r: 26 + Math.random() * 28,
+      phase: Math.random() * 6.28,
+      spd: 0.6 + Math.random() * 0.6,
+      drift: 0.5 + Math.random() * 0.8,
+    });
+  }
+  return out;
+}
+
+/**
+ * Draw the lanterns at overall `alpha` (the dusk factor: 0 by day, 1 by night). Each
+ * drifts slowly and breathes gently (well under 3 Hz). Additive ("lighter") so they
+ * read as warm light. Caller supplies an already-DPR-scaled ctx + CSS-pixel dims.
+ */
+export function drawLanterns(
+  ctx: CanvasRenderingContext2D,
+  lanterns: Lantern[],
+  w: number,
+  h: number,
+  ts: number,
+  alpha: number,
+): void {
+  if (alpha <= 0.001 || !w || !h) return;
+  const t = ts * 0.001;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const l of lanterns) {
+    const cx = l.x * w + Math.sin(t * 0.12 * l.drift + l.phase) * w * 0.03;
+    const cy = l.y * h + Math.cos(t * 0.09 * l.spd + l.phase) * h * 0.025;
+    const breathe = 0.78 + 0.22 * Math.sin(t * 0.4 * l.spd + l.phase); // ~0.06 Hz
+    const a = alpha * breathe;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, l.r);
+    g.addColorStop(0, `rgba(255,214,150,${(0.4 * a).toFixed(3)})`); // warm core glow
+    g.addColorStop(0.4, `rgba(240,184,90,${(0.2 * a).toFixed(3)})`);
+    g.addColorStop(1, "rgba(240,184,90,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, l.r, 0, 6.2832);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,238,205,${(0.5 * a).toFixed(3)})`; // bright ember core
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2.4, 0, 6.2832);
+    ctx.fill();
+  }
+  ctx.restore();
+}

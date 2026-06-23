@@ -26,7 +26,7 @@ import { PAL, SIGILS } from "../../src/atelier/palette";
 import type { Bands } from "../../src/atelier/audio/generative";
 import { drawSeal, makeSealState } from "../../src/atelier/draw/seal";
 import { drawViz, drawGlyphPath } from "../../src/atelier/draw/viz";
-import { drawAmbient, type Mote } from "../../src/atelier/draw/ambient";
+import { drawAmbient, drawLanterns, type Mote, type Lantern } from "../../src/atelier/draw/ambient";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASE = join(__dirname, "baselines");
@@ -119,6 +119,14 @@ describe("visual regression — pure draw modules", () => {
       compare(`ambient-${mode}`, renderPNG(300, 200, (ctx) => drawAmbient(ctx, fixedMotes(), 300, 200, TS, BANDS, PAL[mode])));
     });
   }
+
+  it("lanterns", () => {
+    const fixed: Lantern[] = Array.from({ length: 5 }, (_, i) => ({
+      x: 0.15 + i * 0.17, y: 0.3 + (i % 3) * 0.15, r: 28 + (i % 4) * 7,
+      phase: i * 1.1, spd: 0.7 + (i % 3) * 0.2, drift: 0.6 + (i % 2) * 0.4,
+    }));
+    compare("lanterns", renderPNG(300, 200, (ctx) => drawLanterns(ctx, fixed, 300, 200, TS, 1)));
+  });
 
   for (const sigil of SIGILS) {
     it(`glyph ${sigil}`, () => {

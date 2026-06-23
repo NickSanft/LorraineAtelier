@@ -274,6 +274,7 @@ async function main() {
   quietStartInput.addEventListener("change", applyQuietHours);
   quietEndInput.addEventListener("change", applyQuietHours);
   previewQuietBtn.addEventListener("click", () => invoke("preview_quiet").then(() => append("previewing quiet hours")));
+  document.getElementById("previewLanterns")!.addEventListener("click", () => invoke("preview_lanterns").then(() => append("previewing lanterns")));
 
   document.getElementById("resetBindings")!.addEventListener("click", async () => {
     await invoke("reset_mappings");

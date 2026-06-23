@@ -16,7 +16,7 @@ import {
 } from "./atelier/palette";
 import type { Bands } from "./atelier/audio/generative";
 import { currentBands, onBandFrame, setAttuned, takeBeat, type BandFrameMsg } from "./atelier/audio/source";
-import { makeMotes, drawAmbient, type Mote } from "./atelier/draw/ambient";
+import { makeMotes, drawAmbient, makeLanterns, drawLanterns, type Mote } from "./atelier/draw/ambient";
 import { attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
 import { glowOpacity } from "./atelier/draw/glow";
@@ -132,11 +132,25 @@ function sizeAll() {
   motes = makeMotes(w, h, 56);
 }
 
+const lanterns = makeLanterns(5);
+let lanternPreview = false; // transient preview override (forces dusk on)
+// Dusk factor for the floatglow lanterns: 0 by day, eased to 1 in the evening, full
+// through the night, eased back to 0 after dawn. Independent of the day/night toggle.
+function duskFactor(): number {
+  if (lanternPreview) return 1;
+  const d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+  const dawn = 6 * 60, dawnEnd = 7 * 60, dusk = 18 * 60, duskEnd = 19 * 60;
+  if (m >= duskEnd || m < dawn) return 1; // evening + night
+  if (m >= dusk && m < duskEnd) return (m - dusk) / 60; // dusk ramp up
+  if (m >= dawn && m < dawnEnd) return 1 - (m - dawn) / 60; // dawn ramp down
+  return 0; // daytime
+}
 function drawAmbientFrame(ts: number, b: Bands) {
   const c = ambient as CV;
   if (!motes.length) sizeAll();
   const ctx = c.getContext("2d")!;
   drawAmbient(ctx, motes, c._cssw!, c._cssh!, ts, b, pal);
+  drawLanterns(ctx, lanterns, c._cssw!, c._cssh!, ts, duskFactor()); // warm orbs at dusk
 }
 
 const sealState = makeSealState();
@@ -778,6 +792,10 @@ listen("gift:quietpreview", () => {
   quietPreview = true;
   applyQuiet(true);
   setTimeout(() => { quietPreview = false; checkQuiet(); }, 8000);
+});
+listen("gift:lanternpreview", () => {
+  lanternPreview = true;
+  setTimeout(() => { lanternPreview = false; }, 12000);
 });
 
 // Widget size scales with monitor height so widgets stay proportional across
