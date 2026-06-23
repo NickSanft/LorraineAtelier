@@ -102,6 +102,7 @@ function applyMode(mode: Mode) {
   tint.style.background = getTintBackgroundForMode(mode);
   tint.style.opacity = getTintOpacityForMode(mode);
   pal = PAL[mode];
+  applyBuddyInkMode(); // white-ink buddy frames invert on the bright day scene
   const glowCenter = mode === "night" ? ".5" : ".7"; // day glow needs a stronger centre to read
   glow.style.background = `radial-gradient(circle, ${pal.glowColor}${glowCenter}), ${pal.glowColor}0) 62%)`;
   // `screen` makes the teal bloom glow on the dark night scene, but it can't
@@ -291,25 +292,53 @@ function scheduleSizes() {
 // label AND stamps the label into the payload; we act only on our own (Tauri 2.11
 // `EventTarget::Any` listeners otherwise receive every window's emit).
 const selfLabel = getCurrentWebviewWindow().label;
-if (buddyEl) buddyEl.style.transformOrigin = "24px 21px"; // sprite centre, for scaling
+if (buddyEl) buddyEl.style.transformOrigin = "44px 22px"; // sprite centre, for scaling
 if (buddyEyes) buddyEyes.style.transformOrigin = "center 14px"; // new sprite's eye line
 
-// Swappable buddy sprite: an empty setting uses the built-in SVG; a path/URL shows
-// your own image instead (local paths go through Tauri's asset protocol). Falls back
-// to the built-in sprite if the custom image fails to load.
+// ---- Brushbuddy walk frames (the DEFAULT sprite): white-ink line-art cycled from
+// public/buddy/, advanced when the buddy moves and 5x while it is picked up. A custom
+// `buddySprite` setting overrides these with a single static image.
+const BUDDY_FRAMES = 18;
+const BUDDY_FRAME_URLS = Array.from({ length: BUDDY_FRAMES }, (_, i) => `/buddy/frame_${String(i).padStart(2, "0")}.png`);
+BUDDY_FRAME_URLS.forEach((u) => { const im = new Image(); im.src = u; }); // preload → instant swaps
+let useFrames = true; // the walk frames are the default; false when a custom sprite is set
+let frameIdx = 0, frameAccum = 0, lastBx = NaN, lastBy = NaN;
+function advanceBuddyFrame(m: BuddyMsg) {
+  const moved = Number.isFinite(lastBx) ? Math.hypot(m.x - lastBx, m.y - lastBy) : 0;
+  lastBx = m.x; lastBy = m.y;
+  const step = m.held ? 5 : moved > 0.4 ? 1 : 0; // 5x while picked up; 1x walking; hold at rest
+  frameAccum += step;
+  if (frameAccum >= 1 && buddyImg) {
+    frameIdx = (frameIdx + Math.floor(frameAccum)) % BUDDY_FRAMES;
+    frameAccum -= Math.floor(frameAccum);
+    buddyImg.src = BUDDY_FRAME_URLS[frameIdx];
+  }
+}
+function applyBuddyInkMode() {
+  // The white-ink frames invert to dark ink so they read on the bright DAY scene; a
+  // custom (colour) sprite is shown as-is.
+  if (buddyImg) buddyImg.style.filter = useFrames && curMode === "day" ? "invert(1)" : "";
+}
+
+// Swappable buddy sprite: empty = the default white-ink walk frames; a path/URL shows
+// your own (static) image instead (local paths via Tauri's asset protocol). Falls
+// back to the frames if a custom image fails to load.
 function applyBuddySprite(src?: string) {
   if (!buddyImg || !buddySvg) return;
+  buddySvg.style.display = "none"; // the old built-in SVG is superseded by the frames
   const s = (src || "").trim();
   if (s) {
+    useFrames = false;
     const url = /^(https?:|\/|data:|asset:|tauri:|http:)/i.test(s) ? s : convertFileSrc(s);
-    buddyImg.onerror = () => { buddyImg.style.display = "none"; buddySvg.style.display = "block"; };
+    buddyImg.onerror = () => { buddyImg.onerror = null; useFrames = true; buddyImg.src = BUDDY_FRAME_URLS[frameIdx]; applyBuddyInkMode(); };
     buddyImg.src = url;
-    buddyImg.style.display = "block";
-    buddySvg.style.display = "none";
   } else {
-    buddyImg.style.display = "none";
-    buddySvg.style.display = "block";
+    useFrames = true;
+    buddyImg.onerror = null;
+    buddyImg.src = BUDDY_FRAME_URLS[frameIdx];
   }
+  buddyImg.style.display = "block";
+  applyBuddyInkMode();
 }
 listen<string>("settings:buddySprite", (e) => applyBuddySprite(e.payload));
 listen<boolean>("settings:buddyenabled", (e) => { if (buddyEl) buddyEl.style.display = e.payload ? "" : "none"; });
@@ -362,11 +391,16 @@ listen<BuddyMsg>("buddy", (e) => {
   if (!buddyEl) return;
   buddyEl.style.opacity = m.visible ? "1" : "0";
   if (!m.visible) return; // hidden (off its monitor, or buddy disabled): skip transform → no damage
+  if (useFrames) advanceBuddyFrame(m); // step the walk cycle (5x while held)
   // While held, the buddy lifts (scales up) and gains a warm glow — the "picked up" cue.
   const lift = m.held ? 1.16 : 1;
+  // The walk frames face LEFT, the opposite of the old SVG, so invert the flip for them.
+  const sx = (useFrames ? -m.flip : m.flip) * uiScale * lift;
   buddyEl.style.transform =
-    `translate(${m.x - 24 - insetLeftCss}px, ${m.y - 21 - insetTopCss}px) scale(${m.flip * uiScale * lift}, ${uiScale * lift})`;
-  buddyEl.style.filter = m.held ? "drop-shadow(0 3px 6px rgba(8,6,14,.5)) drop-shadow(0 0 9px var(--c-gold))" : "";
+    `translate(${m.x - 44 - insetLeftCss}px, ${m.y - 22 - insetTopCss}px) scale(${sx}, ${uiScale * lift})`;
+  buddyEl.style.filter = m.held
+    ? "drop-shadow(0 3px 6px rgba(8,6,14,.5)) drop-shadow(0 0 9px var(--c-gold))"
+    : "drop-shadow(0 1px 3px rgba(8,6,14,.5))";
   if (buddyEyes) buddyEyes.style.transform = `scaleY(${m.eye.toFixed(3)})`;
 }, { target: selfLabel });
 
