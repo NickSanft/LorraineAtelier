@@ -168,6 +168,11 @@
           </div>
         </div>
       </div>
+
+      <!-- Quiet-hours "embers" scrim (13.3): an eased dim over the whole scene during
+           the configured night window. Pure CSS opacity transition so it works on
+           static secondary monitors too; never takes input. -->
+      <div id="quiet" style="position:absolute;inset:0;pointer-events:none;z-index:90;background:#05040a;opacity:0;transition:opacity 4s ease"></div>
     </div>
     <script type="module" src="/src/wallpaper.ts"></script>
   </body>

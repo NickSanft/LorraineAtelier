@@ -90,6 +90,9 @@ pub struct Settings {
     pub primary_only: bool, // animate only the primary monitor; secondaries get the static OS wallpaper
     pub buddy_enabled: bool, // show + animate the brushbuddy
     pub cast_hint_shown: u32, // times the in-world "magic is drawn" nudge has shown (capped, then never)
+    pub quiet_hours_enabled: bool, // dim the scene to "embers" during the quiet window
+    pub quiet_start: String,       // "HH:MM" local — quiet window start
+    pub quiet_end: String,         // "HH:MM" local — quiet window end (may wrap past midnight)
 }
 
 impl Default for Settings {
@@ -117,6 +120,9 @@ impl Default for Settings {
             primary_only: true,    // default: full scene on primary, static art elsewhere
             buddy_enabled: true,   // the brushbuddy roams by default
             cast_hint_shown: 0,    // the casting nudge hasn't shown yet
+            quiet_hours_enabled: true, // gift default: the atelier rests at night
+            quiet_start: "22:00".into(),
+            quiet_end: "07:00".into(),
         }
     }
 }
@@ -254,6 +260,16 @@ pub fn set_buddy_enabled(v: bool) {
 
 pub fn set_cast_hint_shown(v: u32) {
     store().lock().unwrap().cast_hint_shown = v;
+    save();
+}
+
+pub fn set_quiet_hours(enabled: bool, start: String, end: String) {
+    {
+        let mut s = store().lock().unwrap();
+        s.quiet_hours_enabled = enabled;
+        s.quiet_start = start;
+        s.quiet_end = end;
+    }
     save();
 }
 

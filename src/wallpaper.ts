@@ -675,6 +675,8 @@ let frameRate = 30; // wallpaper render cap (fps); 0 = monitor refresh rate
 let primaryOnly = true; // when true, only the primary monitor animates; secondaries stay static (~0 GPU)
 let loopGen = 0; // bumped on framerate/loop change so the old loop self-cancels
 let loopRunning = false;
+let quietActive = false; // quiet-hours "embers" dim active
+let quietLevel = 0; // eased 0..1; gentles the seal/motes/glow reactivity at night
 // Drive the ambient loop with setTimeout, NOT requestAnimationFrame. An active rAF
 // loop keeps Chromium's compositor in continuous "animating" mode, so it PRESENTS
 // every vsync (e.g. 175 Hz) even though we only redraw at 30 Hz — confirmed via
@@ -685,7 +687,10 @@ let loopRunning = false;
 function drawFrame(ts: number) {
   const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.033;
   lastTs = ts;
-  const b = currentBands(ts); // generative or real (attuned) audio
+  quietLevel += ((quietActive ? 1 : 0) - quietLevel) * 0.03; // ease the night calm (~2s)
+  const raw = currentBands(ts); // generative or real (attuned) audio
+  const qf = 1 - quietLevel * 0.55; // quiet hours gentle the reactivity
+  const b = quietLevel > 0.01 ? { bass: raw.bass * qf, mid: raw.mid * qf, high: raw.high * qf } : raw;
   drawAmbientFrame(ts, b);
   drawVizFrame(ts, b, dt, takeBeat()); // advances sealState (smoothed bands)
   // Rotate the decorative clock/seal rings here (was infinite CSS animation). On
@@ -739,6 +744,42 @@ function setFrameRate(fps: number) {
   if (loopRunning) startLoop(); // retune live (no-op while static)
 }
 
+// ---- Quiet hours (13.3): the atelier dims to "embers" during the night window. The
+// #quiet scrim eases via CSS (so static secondary monitors dim too); on the primary
+// the render loop also lerps `quietLevel` to gentle the seal/motes/glow reactivity.
+// Each window computes the window from its own local clock — no per-tick Rust traffic.
+let quietCfg = { enabled: true, start: "22:00", end: "07:00" };
+let quietPreview = false; // a transient preview override (holds the dim, then reverts)
+const quietEl = document.getElementById("quiet");
+function toMin(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || "").trim());
+  return m ? Math.min(23, +m[1]) * 60 + Math.min(59, +m[2]) : -1;
+}
+function isQuietNow(): boolean {
+  if (!quietCfg.enabled) return false;
+  const s = toMin(quietCfg.start), e = toMin(quietCfg.end);
+  if (s < 0 || e < 0 || s === e) return false;
+  const d = new Date(), now = d.getHours() * 60 + d.getMinutes();
+  return s < e ? now >= s && now < e : now >= s || now < e; // wraps past midnight
+}
+function applyQuiet(active: boolean) {
+  quietActive = active;
+  if (quietEl) quietEl.style.opacity = active ? "0.5" : "0"; // CSS eases the dim
+}
+function checkQuiet() {
+  if (!quietPreview) applyQuiet(isQuietNow());
+}
+setInterval(checkQuiet, 30000); // catch the window boundary (a cheap clock check)
+listen<{ enabled: boolean; start: string; end: string }>("settings:quiethours", (e) => {
+  if (e.payload) quietCfg = e.payload;
+  checkQuiet();
+});
+listen("gift:quietpreview", () => {
+  quietPreview = true;
+  applyQuiet(true);
+  setTimeout(() => { quietPreview = false; checkQuiet(); }, 8000);
+});
+
 // Widget size scales with monitor height so widgets stay proportional across
 // resolutions (1440 → 1.5 = +50%; 1080 → ~1.1). Must run before sizeAll() so the
 // scaled canvas bounding box is measured. Phase 7 will make widget size + position
@@ -759,8 +800,8 @@ function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; updateLoopState(); });

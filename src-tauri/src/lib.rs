@@ -1434,6 +1434,26 @@ fn preview_cast_hint(app: AppHandle) -> String {
     "previewing casting nudge".into()
 }
 
+/// Update quiet-hours config from the control panel and notify the wallpapers so the
+/// change takes effect immediately (each computes the dim from its own local clock).
+#[tauri::command]
+fn set_quiet_hours(app: AppHandle, enabled: bool, start: String, end: String) -> String {
+    settings::set_quiet_hours(enabled, start.clone(), end.clone());
+    let _ = app.emit(
+        "settings:quiethours",
+        serde_json::json!({ "enabled": enabled, "start": start, "end": end }),
+    );
+    "quiet hours updated".into()
+}
+
+/// Preview the quiet-hours "embers" dim on demand — the wallpaper eases into it, then
+/// reverts to the real (time-based) state after a few seconds.
+#[tauri::command]
+fn preview_quiet(app: AppHandle) -> String {
+    let _ = app.emit("gift:quietpreview", ());
+    "previewing quiet hours".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1590,6 +1610,8 @@ pub fn run() {
             preview_silvereve,
             preview_petrify,
             preview_cast_hint,
+            set_quiet_hours,
+            preview_quiet,
             set_viz_source,
             viz_status,
             casting::classify_sigil,

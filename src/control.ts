@@ -16,6 +16,10 @@ const startupBtn = document.getElementById("startup") as HTMLButtonElement;
 const frameRateSel = document.getElementById("frameRate") as HTMLSelectElement;
 const primaryOnlyBtn = document.getElementById("primaryOnly") as HTMLButtonElement;
 const buddyEnabledBtn = document.getElementById("buddyEnabled") as HTMLButtonElement;
+const quietToggleBtn = document.getElementById("quietToggle") as HTMLButtonElement;
+const quietStartInput = document.getElementById("quietStart") as HTMLInputElement;
+const quietEndInput = document.getElementById("quietEnd") as HTMLInputElement;
+const previewQuietBtn = document.getElementById("previewQuiet") as HTMLButtonElement;
 const bindingsEl = document.getElementById("bindings")!;
 const tomesEl = document.getElementById("tomes")!;
 const tomesHintEl = document.getElementById("tomesHint")!;
@@ -37,6 +41,7 @@ let colorblindOn = false;
 let startupOn = false;
 let primaryOnlyOn = true;
 let buddyEnabledOn = true;
+let quietEnabledOn = true;
 
 function renderMode() {
   modeBtn.textContent = mode === "night" ? "☾ Night" : "☀ Day";
@@ -71,6 +76,10 @@ function renderBuddyEnabled() {
   buddyEnabledBtn.textContent = `Brushbuddy: ${buddyEnabledOn ? "on" : "off"}`;
   buddyEnabledBtn.classList.toggle("on", buddyEnabledOn);
 }
+function renderQuiet() {
+  quietToggleBtn.textContent = `Quiet hours: ${quietEnabledOn ? "on" : "off"}`;
+  quietToggleBtn.classList.toggle("on", quietEnabledOn);
+}
 
 interface SettingsDto {
   mode: string;
@@ -85,6 +94,9 @@ interface SettingsDto {
   frameRate: number;
   primaryOnly: boolean;
   buddyEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietStart: string;
+  quietEnd: string;
   buddySprite: string;
   widgetLayout: Record<string, { x: number; y: number; scale: number; vertical?: boolean }>;
 }
@@ -188,6 +200,9 @@ async function main() {
     startupOn = !!s.runAtStartup;
     primaryOnlyOn = s.primaryOnly !== false; // default true
     buddyEnabledOn = s.buddyEnabled !== false; // default true
+    quietEnabledOn = s.quietHoursEnabled !== false; // default on
+    if (s.quietStart) quietStartInput.value = s.quietStart;
+    if (s.quietEnd) quietEndInput.value = s.quietEnd;
     frameRateSel.value = String(s.frameRate ?? 30);
     buildBindings(s.mappings || {});
     buildTomes(s);
@@ -203,7 +218,7 @@ async function main() {
     append("get_settings ✗ " + e);
   }
   try { attuned = !!(await invoke<boolean>("viz_status")); } catch { /* */ }
-  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup(); renderPrimaryOnly(); renderBuddyEnabled();
+  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup(); renderPrimaryOnly(); renderBuddyEnabled(); renderQuiet();
 
   // Flip via the authoritative Rust toggle; our label updates from the
   // `settings:mode` broadcast below (so it can't desync from the real state).
@@ -251,6 +266,14 @@ async function main() {
     await invoke("set_buddy_enabled", { enabled: buddyEnabledOn });
     append(`brushbuddy → ${buddyEnabledOn ? "on" : "off"}`);
   });
+  const applyQuietHours = async () => {
+    await invoke("set_quiet_hours", { enabled: quietEnabledOn, start: quietStartInput.value || "22:00", end: quietEndInput.value || "07:00" });
+    append(`quiet hours → ${quietEnabledOn ? `${quietStartInput.value}–${quietEndInput.value}` : "off"}`);
+  };
+  quietToggleBtn.addEventListener("click", async () => { quietEnabledOn = !quietEnabledOn; renderQuiet(); await applyQuietHours(); });
+  quietStartInput.addEventListener("change", applyQuietHours);
+  quietEndInput.addEventListener("change", applyQuietHours);
+  previewQuietBtn.addEventListener("click", () => invoke("preview_quiet").then(() => append("previewing quiet hours")));
 
   document.getElementById("resetBindings")!.addEventListener("click", async () => {
     await invoke("reset_mappings");

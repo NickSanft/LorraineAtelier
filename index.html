@@ -92,6 +92,17 @@
         <button id="buddyEnabled">Brushbuddy: on</button>
       </div>
       <div class="hint">Lower framerate &amp; "primary only" reduce GPU/CPU. "Primary only" shows the live scene on your main monitor and the static art on the others.</div>
+      <div class="toggles" style="align-items:center">
+        <button id="quietToggle">Quiet hours: on</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#efe6d2;font-family:'Cinzel',serif;letter-spacing:.04em">from
+          <input type="time" id="quietStart" value="22:00" style="background:#241c34;color:#efe6d2;border:1px solid var(--edge);border-radius:8px;padding:7px 9px;font:11px 'Cascadia Code',monospace" />
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#efe6d2;font-family:'Cinzel',serif;letter-spacing:.04em">to
+          <input type="time" id="quietEnd" value="07:00" style="background:#241c34;color:#efe6d2;border:1px solid var(--edge);border-radius:8px;padding:7px 9px;font:11px 'Cascadia Code',monospace" />
+        </label>
+        <button id="previewQuiet" class="test" style="font-size:10px">Preview</button>
+      </div>
+      <div class="hint">During quiet hours the Atelier dims to a restful "embers" glow — gentler motion, lower light, and less GPU.</div>
     </div>
 
     <!-- Spell Bindings panel (populated by control.ts) -->
