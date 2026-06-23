@@ -11,22 +11,35 @@
     "lint:noinput": "node scripts/check-no-input.mjs",
     "dump-corpus": "node scripts/recognizer-oracle.mjs",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:visual:update": "cross-env UPDATE_VISUAL=1 vitest run tests/visual"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.0",
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.0",
     "@tauri-apps/cli": "^2.1.0",
     "@types/node": "^22.10.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
     "@vitest/ui": "^2.1.0",
+    "cross-env": "^10.1.0",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
     "typescript": "^5.7.0",
     "vite": "^5.4.10",
     "vite-plugin-solid": "^2.11.0",
     "vitest": "^2.1.0"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "packageManager": "pnpm@10.32.1",
-  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
 }

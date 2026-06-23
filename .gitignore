@@ -1,5 +1,7 @@
 # --- Node / frontend ---
 node_modules/
+# visual-regression diff artifacts (baselines ARE committed; diffs are not)
+tests/visual/__diffs__/
 .pnpm-store/
 dist/
 dist-ssr/

@@ -97,13 +97,26 @@ export function drawSeal(
   }
 
   // three concentric rings; alternating rotation; bass thickens the ink + bleed.
+  // `frac` is the radius as a fraction of R; the dash count is derived from the
+  // STABLE (un-breathing) radius so the pattern tiles the circle EXACTLY (no seam,
+  // no "not-quite-a-circle" discontinuity) and never pops when the seal breathes.
+  const baseR = (Math.min(w, h) / 2 - 8) * 0.88; // R at loud=bass=0
+  const DASH_PERIOD = 14; // nominal px between dashes → ~clean long-dash look
   const rings = [
-    { r: R * 0.98, rot: s.outer, band: s.mid, wd: 2.0 },
-    { r: R * 0.74, rot: s.inner, band: s.high, wd: 1.5 },
-    { r: R * 0.5, rot: s.outer * 1.4, band: s.bass, wd: 1.3 },
+    { frac: 0.98, rot: s.outer, band: s.mid, wd: 2.0 },
+    { frac: 0.74, rot: s.inner, band: s.high, wd: 1.5 },
+    { frac: 0.5, rot: s.outer * 1.4, band: s.bass, wd: 1.3 },
   ];
   rings.forEach((rg, i) => {
     const isOuter = i === 0;
+    const r = R * rg.frac; // actual (audio-breathing) radius
+    const n = Math.max(24, Math.round((2 * Math.PI * baseR * rg.frac) / DASH_PERIOD)); // stable dash count
+    const period = (2 * Math.PI * r) / n; // tiles the actual circumference exactly
+    // dash FRACTION (not gap) carries the breathing: the outer ring "closes" on a
+    // beat by growing its dashes toward solid; inner rings shimmer subtly. Keeping
+    // the period = circ/n fixed means the dash count never changes → clean circle.
+    const dashFrac = isOuter ? 0.15 + 0.7 * s.beat : 0.14 + 0.12 * rg.band;
+    const dash = Math.max(0.6, period * dashFrac);
     ctx.save();
     ctx.rotate(rg.rot);
     ctx.beginPath();
@@ -112,17 +125,11 @@ export function drawSeal(
     // rings snap with bass (lively). Keeps the outermost circle from flickering.
     ctx.globalAlpha = 0.32 + (isOuter ? s.loud * 0.5 : rg.band * 0.6);
     ctx.lineWidth = rg.wd + rg.band * 1.4 + (isOuter ? s.loud * 2.2 : s.bass * 3.2);
-    if (isOuter) {
-      // a beat "closes" the ring GRADUALLY as the flash decays (no hard snap)
-      const gap = Math.max(0.5, (9 + s.mid * 12) * (1 - s.beat));
-      ctx.setLineDash([2, gap]);
-    } else {
-      ctx.setLineDash([2, 9 + s.mid * 14]);
-    }
+    ctx.setLineDash([dash, Math.max(0.6, period - dash)]);
     ctx.lineDashOffset = -rg.rot * 60;
     ctx.shadowColor = teal;
     ctx.shadowBlur = 7 + (isOuter ? s.loud * 14 : s.bass * 20); // ink bleed
-    ctx.arc(0, 0, rg.r, 0, 6.2832);
+    ctx.arc(0, 0, r, 0, 6.2832);
     ctx.stroke();
     ctx.restore();
   });

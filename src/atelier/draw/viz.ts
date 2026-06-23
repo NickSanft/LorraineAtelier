@@ -40,21 +40,28 @@ export function drawViz(
   const teal = pal.teal, gold = pal.gold;
   ctx.save();
   ctx.translate(cx, cy);
+  // Dash count derived from the radius so the pattern tiles the circle EXACTLY
+  // (no ragged seam where the arc closes); the dash fraction carries the shimmer.
+  const DASH_PERIOD = 14;
   const rings = [
-    { r: R * 0.98, sp: 0.6, wd: 2.2 },
-    { r: R * 0.74, sp: -0.9, wd: 1.6 },
-    { r: R * 0.5, sp: 1.3, wd: 1.4 },
+    { frac: 0.98, sp: 0.6, wd: 2.2 },
+    { frac: 0.74, sp: -0.9, wd: 1.6 },
+    { frac: 0.5, sp: 1.3, wd: 1.4 },
   ];
   rings.forEach((rg, i) => {
+    const r = R * rg.frac;
+    const n = Math.max(24, Math.round((2 * Math.PI * r) / DASH_PERIOD));
+    const period = (2 * Math.PI * r) / n;
+    const dash = Math.max(0.6, period * (0.16 + b.mid * 0.12));
     ctx.beginPath();
     ctx.strokeStyle = teal;
     ctx.globalAlpha = 0.28 + (i === 0 ? b.mid : b.high) * 0.5;
     ctx.lineWidth = rg.wd;
-    ctx.setLineDash([2, 10 + b.mid * 14]);
+    ctx.setLineDash([dash, Math.max(0.6, period - dash)]);
     ctx.lineDashOffset = -ts * 0.01 * rg.sp * (0.5 + b.mid * 2);
     ctx.shadowColor = teal;
     ctx.shadowBlur = 8 + b.bass * 18;
-    ctx.arc(0, 0, rg.r, 0, 6.2832);
+    ctx.arc(0, 0, r, 0, 6.2832);
     ctx.stroke();
   });
   ctx.setLineDash([]);

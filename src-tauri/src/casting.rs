@@ -55,27 +55,70 @@ fn find_spell(kind: &str, base: &str) -> Option<&'static Spell> {
         .or_else(|| SPELLS.iter().find(|s| s.sigil.starts_with(base)))
 }
 
-/// Try to focus an already-running instance of the element's app (restoring it if
-/// minimized) before launching a new one. Browser is left to its URL open (which
-/// focuses it anyway); Explorer matches a real File-Explorer window (shell
-/// surfaces are excluded in `activate_window_for`). Returns true if one was found.
-fn activate_for_key(key: &str) -> bool {
+/// Candidate process basenames an already-running instance of `target` would use,
+/// so a cast can focus it instead of launching a duplicate. Empty = nothing we can
+/// reliably match (e.g. an http/https URL — opening it focuses the browser anyway).
+#[cfg(windows)]
+fn processes_for_target(target: &str) -> Vec<String> {
+    let t = target.trim();
+    let tl = t.to_lowercase();
+    if tl == "files" {
+        return vec!["explorer.exe".into()];
+    }
+    // A filesystem path to an executable → its basename (ignores quotes + args).
+    if let Some(exe) = exe_basename(t) {
+        return vec![exe];
+    }
+    // Known app protocols → their process basename.
+    const PROTO: &[(&str, &str)] = &[
+        ("steam:", "steam.exe"),
+        ("discord:", "discord.exe"),
+        ("slack:", "slack.exe"),
+        ("spotify:", "spotify.exe"),
+        ("obsidian:", "obsidian.exe"),
+        ("ms-teams:", "ms-teams.exe"),
+        ("msteams:", "ms-teams.exe"),
+    ];
+    for (p, exe) in PROTO {
+        if tl.starts_with(p) {
+            return vec![(*exe).into()];
+        }
+    }
+    Vec::new() // http(s) / unknown → let the launcher open it
+}
+
+/// If `target` points at an .exe (optionally quoted, optionally with trailing args),
+/// return the lowercased basename, e.g. `"C:\Apps\Foo.exe" --bar` → `foo.exe`.
+#[cfg(windows)]
+fn exe_basename(target: &str) -> Option<String> {
+    let t = target.trim().trim_start_matches('"');
+    let lower = t.to_lowercase();
+    let end = lower.find(".exe")? + 4;
+    let path = &t[..end];
+    let base = path.rsplit(['\\', '/']).next()?.to_lowercase();
+    if base.is_empty() {
+        None
+    } else {
+        Some(base)
+    }
+}
+
+/// Focus an already-running instance of whatever `target` launches (restoring it if
+/// minimized); shell surfaces are excluded in `activate_window_for`. Works for any
+/// binding (default or custom). Returns true if one was found and brought forward.
+fn activate_for_target(target: &str) -> bool {
     #[cfg(windows)]
     {
-        let names: &[&str] = match key {
-            "fire" => &["steam.exe"],
-            "water" => &["discord.exe"],
-            "earth" => &["explorer.exe"],
-            _ => &[],
-        };
+        let names = processes_for_target(target);
         if names.is_empty() {
             return false;
         }
-        crate::workerw::activate_window_for(names)
+        let refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        crate::workerw::activate_window_for(&refs)
     }
     #[cfg(not(windows))]
     {
-        let _ = key;
+        let _ = target;
         false
     }
 }
@@ -243,12 +286,15 @@ pub fn fire_spell(
     } else if key == "light" {
         // Light is a cosmetic illumination (the bloom IS the effect); no app.
     } else {
-        // Resolve the user-configurable target. For a still-default binding, focus a
-        // running instance first (restore if minimized); for a custom binding just
-        // launch it (process-name activation wouldn't match an arbitrary target).
+        // Resolve the user-configurable target. If the bound app is already running,
+        // focus it (restoring if minimized) and keep it foreground after the overlay
+        // closes; otherwise launch it (a launching app foregrounds itself, so the
+        // pre-cast window is restored harmlessly).
         let target = crate::settings::mapping_for(&key).unwrap_or_else(|| "files".into());
-        let is_default = crate::settings::default_mappings().get(&key).map_or(false, |d| *d == target);
-        if !(is_default && activate_for_key(&key)) {
+        if activate_for_target(&target) {
+            #[cfg(windows)]
+            crate::workerw::note_cast_foreground();
+        } else {
             let _ = launcher::LaunchTarget::from_target(&target).launch();
         }
         launched = true;
@@ -279,8 +325,7 @@ pub fn fire_spell(
 #[tauri::command]
 pub fn test_launch(key: String) -> String {
     let target = crate::settings::mapping_for(&key).unwrap_or_else(|| "files".into());
-    let is_default = crate::settings::default_mappings().get(&key).map_or(false, |d| *d == target);
-    if is_default && activate_for_key(&key) {
+    if activate_for_target(&target) {
         return format!("focused {key}");
     }
     let _ = launcher::LaunchTarget::from_target(&target).launch();

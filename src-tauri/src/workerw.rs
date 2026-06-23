@@ -461,6 +461,10 @@ pub fn activate_window_for(exe_names: &[&str]) -> bool {
 static OVERLAY_CASTING: AtomicBool = AtomicBool::new(false);
 // The foreground window the user was on before casting, so we can hand it back.
 static PREV_FOREGROUND: AtomicIsize = AtomicIsize::new(0);
+// Set when a cast just brought its target app to the foreground, so the next
+// `restore_foreground()` leaves that app focused rather than clawing the foreground
+// back to the pre-cast window.
+static CAST_FOREGROUND: AtomicBool = AtomicBool::new(false);
 
 /// Whether the casting slate is currently open.
 pub fn set_overlay_casting(active: bool) {
@@ -498,11 +502,22 @@ fn unjam_target(candidate: isize) -> Option<HWND> {
     }
 }
 
+/// Called by a cast that has just focused (or launched) its target app, so the next
+/// `restore_foreground()` is suppressed and the cast app keeps the foreground.
+pub fn note_cast_foreground() {
+    CAST_FOREGROUND.store(true, Ordering::Relaxed);
+}
+
 /// Hand the foreground back to whatever the user was using before casting (falling
 /// back to the shell desktop). This is the allowed direction for SetForegroundWindow:
-/// we currently own the foreground (the casting overlay), so we may pass it on.
+/// we currently own the foreground (the casting overlay), so we may pass it on. If a
+/// cast just brought its app forward, skip the hand-back so the app stays focused.
 pub fn restore_foreground() {
+    let cast_took_fg = CAST_FOREGROUND.swap(false, Ordering::Relaxed);
     let h = PREV_FOREGROUND.swap(0, Ordering::Relaxed);
+    if cast_took_fg {
+        return; // the cast's app owns the foreground now — leave it there
+    }
     if let Some(t) = unjam_target(h) {
         unsafe {
             let _ = SetForegroundWindow(t);

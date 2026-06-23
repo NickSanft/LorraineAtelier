@@ -324,6 +324,18 @@ Phases are ordered so the **riskiest remaining unknown (explorer-restart recover
 
 ---
 
+### Phase 12 — Post-gift fixes & visual-regression harness (2026-06-22)
+Three user-requested items after the gift shipped.
+
+**12.1 — Cast focuses the running app.** Casting a spell whose bound app is already open should leave THAT app focused. Two problems: (a) focus-on-running only fired for the three default bindings (steam/discord/explorer) via a hardcoded key→exe map, not custom bindings; (b) after a cast, `close_casting_impl` → `restore_foreground()` handed the foreground back to the PRE-CAST window, stealing it from the app the cast just focused (~700 ms after the bloom). Fix: derive candidate process basenames from the *target* (`files`→explorer.exe; a path ending `.exe`→its basename; known protocols steam:/discord:/slack:/spotify:/…→their exe; http(s)→none, the URL open focuses the browser) so focus works for any binding; when a cast focuses an already-running app, set a `CAST_FOREGROUND` flag so the next `restore_foreground()` is skipped (the cast app keeps focus). Launch-new apps foreground themselves, so they still restore the pre-cast window harmlessly. Files: `casting.rs` (processes_for_target/exe_basename/activate_for_target + fire_spell + test_launch), `workerw.rs` (note_cast_foreground + restore_foreground skip).
+
+**12.2 — Seal dashed-ring is a clean circle.** The rotating long-dash ring in the visualizer seal read as ragged / "not quite a circle": a full-circle stroke with a fixed dash pattern (`setLineDash([2, gap])`) whose period does not divide the circumference leaves a discontinuity at the arc seam, which rotates with the ring. Fix: quantize each ring's dash period to tile the circumference EXACTLY — choose an integer dash count from the *stable* (un-breathing) canvas radius, then set the dash so `(dash+gap)·n == 2πr` for the actual (audio-scaled) radius. The beat-close effect is preserved by growing the dash *fraction* on a beat (not by changing the gap), so the dash count never pops. Files: `src/atelier/draw/seal.ts` (and `viz.ts` legacy renderer for parity).
+
+**12.3 — Visual-regression harness.** Guard the canvas widgets against future drift. A vitest suite renders the *pure* draw modules to an offscreen Skia canvas (`@napi-rs/canvas`, prebuilt — no native build) with deterministic inputs (fixed bands, seal state, motes, palette), exports a PNG, and pixel-diffs it against a committed baseline (`pixelmatch` + `pngjs`) with a small tolerance ("don't deviate too much"). Targets: drawSeal, drawViz, drawGlyphPath (all 4 sigils), drawAmbient. Baselines live in `tests/visual/baselines/`; `pnpm test:visual:update` regenerates them (review the PNG diff before committing); a normal `pnpm test` fails if any widget changes beyond the threshold or a baseline is missing. The harness renders with Skia (not Chromium) so it tracks OUR code, not the browser — ideal for catching regressions. Files: `tests/visual/*`, `package.json` devDeps + scripts.
+**Effort: M**
+
+---
+
 ## 3. Consolidated Risk Register
 
 | # | Risk | Severity | Mitigation |
