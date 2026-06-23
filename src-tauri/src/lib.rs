@@ -26,6 +26,8 @@ mod settings;
 /// Run-at-startup: we own the HKCU Run key write (quoted path) rather than the
 /// auto-launch crate, which writes it unquoted and breaks on the install path's space.
 mod autostart;
+#[cfg(windows)]
+mod power;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -192,6 +194,13 @@ static HOSTS: [std::sync::atomic::AtomicIsize; MAX_WALLPAPER] =
 static PAUSED: [std::sync::atomic::AtomicBool; MAX_WALLPAPER] =
     [const { std::sync::atomic::AtomicBool::new(false) }; MAX_WALLPAPER];
 
+/// Set by a resume-from-sleep to force the next `ensure_attached` to rebuild EVERY
+/// attached slot (not just dead/moved ones) — a suspended controller can come back
+/// blank while its host window is still alive, which the handle-driven watchdog can't
+/// detect. Cleared (swapped false) when consumed.
+#[cfg(windows)]
+static FORCE_REATTACH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Power-saving option: when true, pause a monitor's wallpaper while a fullscreen
 /// window covers it. **Default OFF** — resuming re-composites the WebView2, which
 /// causes a brief flash, so out of the box we just keep rendering (the idle cost
@@ -347,6 +356,10 @@ fn ensure_attached(app: &AppHandle) {
     // Publish the (capped) monitor list for the brushbuddy thread.
     *monitors_store().lock().unwrap() = monitors[..n].to_vec();
 
+    // A resume-from-sleep forces every attached slot to rebuild (a suspended
+    // controller can return blank under a still-live host). Consume the flag once.
+    let forced = FORCE_REATTACH.swap(false, Ordering::Relaxed);
+
     // Tear down hosts for slots whose monitor was unplugged (count decreased).
     for i in n..MAX_WALLPAPER {
         let h = HOSTS[i].swap(0, Ordering::Relaxed);
@@ -378,11 +391,16 @@ fn ensure_attached(app: &AppHandle) {
         //     fresh webview that picks up the new resolution/scale (a brief reload
         //     on a rare, deliberate action).
         let host_died = host_raw != 0 && !host_alive;
-        let display_changed = host_alive && attached && stored != cur;
+        let display_changed = host_alive && attached && (stored != cur || forced);
 
         if host_died || display_changed {
             if display_changed {
-                log(app, format!("wallpaper-{i}: display changed {stored:?} -> {cur:?} — rebuilding"));
+                let reason = if forced && stored == cur {
+                    "forced re-attach (resume)".to_string()
+                } else {
+                    format!("display changed {stored:?} -> {cur:?}")
+                };
+                log(app, format!("wallpaper-{i}: {reason} — rebuilding"));
             }
             ATTACHED[i].store(false, Ordering::Relaxed);
             recreate_window(app, i, mon);
@@ -487,6 +505,29 @@ fn spawn_watchdog(app: AppHandle) {
             update_pause(&app2);
         });
     });
+}
+
+/// Resume from sleep/hibernate (from `power.rs`, on the main thread): force a full
+/// re-attach so the wallpaper is guaranteed clean even if a controller came back
+/// blank under a still-live host while suspended.
+#[cfg(windows)]
+pub(crate) fn power_resume(app: &AppHandle) {
+    FORCE_REATTACH.store(true, std::sync::atomic::Ordering::Relaxed);
+    ensure_attached(app);
+    update_pause(app);
+    log(app, "power: resume — forced re-attach");
+    log_startup("power: resume — forced re-attach"); // persisted breadcrumb
+}
+
+/// Session became active again — unlock / logon (from `power.rs`, on the main
+/// thread): a normal validation pass that recreates any host that died while locked
+/// but leaves healthy controllers untouched (no reload on routine unlocks).
+#[cfg(windows)]
+pub(crate) fn power_session_active(app: &AppHandle) {
+    ensure_attached(app);
+    update_pause(app);
+    log(app, "power: session active — validated");
+    log_startup("power: session active — validated"); // persisted breadcrumb
 }
 
 // ---------------------------------------------------------------------------
@@ -1578,13 +1619,14 @@ pub fn run() {
                     spawn_watchdog(_handle.clone());
                     spawn_buddy(_handle.clone());
                     spawn_birthday_watch(_handle.clone());
+                    power::start(_handle.clone()); // sleep/wake + lock/unlock recovery
                     if settings::get().desktop_interactive {
                         hook::set_enabled(_handle, true);
                     }
                     // Belt-and-suspenders: re-broadcast the persisted mode once windows
                     // exist, in case any wallpaper pulled before settings were loaded.
                     let _ = _handle.emit("settings:mode", settings::get().mode);
-                    log_startup("startup complete (attach + watchdog + buddy + hook)");
+                    log_startup("startup complete (attach + watchdog + buddy + hook + power)");
                 }
                 // If a logon launch dies, this tells us it exited cleanly (vs. a hard
                 // mid-startup abort that never reaches here).
