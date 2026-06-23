@@ -528,6 +528,75 @@ function startBird() {
 }
 listen("cast:bird", () => startBird());
 
+// ---- in-world casting self-discovery (Phase 13.2): a dip-pen traces a sigil and a
+// parchment line invites her to take up the pen — so draw-to-cast (the heart of the
+// gift) can't go unfound. Render-only on the #bloom canvas, dissolves on its own,
+// reduced-motion-safe, primary monitor only. Rust gates how often it shows.
+let hintRaf = 0;
+function playCastHint() {
+  const c = bloom as CV;
+  const ctx = c.getContext("2d")!;
+  const w = c._cssw || 0, h = c._cssh || 0;
+  if (!w || !h) return;
+  const reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const sc = Math.max(1, uiScale);
+  const cx = w / 2, cy = h * 0.4;
+  const R = Math.min(w, h) * 0.07 * sc;
+  const trace = reduced ? 1 : 2400, hold = 4400, fade = 1600;
+  const total = trace + hold + fade;
+  const teal = pal.teal, gold = pal.gold;
+  const start = performance.now();
+  cancelAnimationFrame(hintRaf);
+  const step = (now: number) => {
+    const t = now - start;
+    ctx.clearRect(0, 0, w, h);
+    if (t >= total) { ctx.clearRect(0, 0, w, h); return; }
+    const outA = t > trace + hold ? Math.max(0, 1 - (t - trace - hold) / fade) : Math.min(1, t / 400);
+    // a soft scrim so the nudge reads on any wallpaper / mode
+    const g = ctx.createRadialGradient(cx, cy + R * 0.6, 0, cx, cy + R * 0.6, R * 6);
+    g.addColorStop(0, `rgba(8,6,16,${(0.5 * outA).toFixed(3)})`);
+    g.addColorStop(1, "rgba(8,6,16,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    // trace the ring (a circle sigil) with a dip-pen nib at the leading edge
+    const tp = reduced ? 1 : Math.min(1, t / trace);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    ctx.strokeStyle = teal; ctx.globalAlpha = 0.9 * outA;
+    ctx.lineWidth = 2.4 * sc; ctx.lineCap = "round";
+    ctx.shadowColor = teal; ctx.shadowBlur = 12;
+    ctx.arc(0, 0, R, -Math.PI / 2, -Math.PI / 2 + tp * 6.2832);
+    ctx.stroke();
+    if (tp < 1) {
+      const a = -Math.PI / 2 + tp * 6.2832;
+      ctx.beginPath(); ctx.fillStyle = gold; ctx.globalAlpha = outA;
+      ctx.shadowColor = gold; ctx.shadowBlur = 16;
+      ctx.arc(Math.cos(a) * R, Math.sin(a) * R, 3 * sc, 0, 6.2832); ctx.fill();
+    }
+    ctx.restore();
+    ctx.shadowBlur = 0;
+    // the invitation, fading in after the trace begins
+    const textA = Math.min(1, Math.max(0, (t - trace * 0.7) / 700)) * outA;
+    if (textA > 0) {
+      ctx.textAlign = "center"; ctx.globalAlpha = textA;
+      ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 10;
+      const s1 = Math.round(19 * sc);
+      ctx.font = `${s1}px "Cinzel", serif`;
+      ctx.fillStyle = gold;
+      ctx.fillText("Magic is not spoken here — it is drawn.", cx, cy + R + s1 * 2.2);
+      const s2 = Math.round(13 * sc);
+      ctx.font = `${s2}px "EB Garamond", serif`;
+      ctx.fillStyle = "rgba(243,236,222,.9)";
+      ctx.fillText("take up the pen — Ctrl + Alt + W", cx, cy + R + s1 * 2.2 + s2 * 2.0);
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    hintRaf = requestAnimationFrame(step);
+  };
+  hintRaf = requestAnimationFrame(step);
+}
+listen("gift:casthint", () => { if (isPrimary !== false) playCastHint(); });
+
 // ---- Silver-Eve festival egg: a drift of gold/silver star-motes ("the Night of
 // the Falling Stars"), surfaced by Rust on the date or via the preview button.
 let festivalRaf = 0;

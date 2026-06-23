@@ -89,6 +89,7 @@ pub struct Settings {
     pub frame_rate: u32, // wallpaper render cap in fps; 0 = monitor refresh rate
     pub primary_only: bool, // animate only the primary monitor; secondaries get the static OS wallpaper
     pub buddy_enabled: bool, // show + animate the brushbuddy
+    pub cast_hint_shown: u32, // times the in-world "magic is drawn" nudge has shown (capped, then never)
 }
 
 impl Default for Settings {
@@ -115,6 +116,7 @@ impl Default for Settings {
             frame_rate: 30,        // gentle default; lowest GPU/CPU
             primary_only: true,    // default: full scene on primary, static art elsewhere
             buddy_enabled: true,   // the brushbuddy roams by default
+            cast_hint_shown: 0,    // the casting nudge hasn't shown yet
         }
     }
 }
@@ -247,6 +249,11 @@ pub fn set_primary_only(v: bool) {
 
 pub fn set_buddy_enabled(v: bool) {
     store().lock().unwrap().buddy_enabled = v;
+    save();
+}
+
+pub fn set_cast_hint_shown(v: u32) {
+    store().lock().unwrap().cast_hint_shown = v;
     save();
 }
 

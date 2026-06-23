@@ -364,6 +364,7 @@ async function main() {
   document.getElementById("preview")!.addEventListener("click", () => invoke("preview_storybook").then(() => append("previewing dedication")));
   document.getElementById("previewSilver")!.addEventListener("click", () => invoke("preview_silvereve").then(() => append("previewing Silver Eve")));
   document.getElementById("previewMisfire")!.addEventListener("click", () => invoke("preview_petrify").then(() => append("previewing misfire (Petrification)")));
+  document.getElementById("previewCastHint")!.addEventListener("click", () => invoke("preview_cast_hint").then(() => append("previewing casting nudge")));
 
   document.getElementById("reattach")!.addEventListener("click", () => invoke("reattach_wallpaper").then(() => append("re-attach requested")));
   document.getElementById("overlay")!.addEventListener("click", () => invoke("toggle_overlay"));

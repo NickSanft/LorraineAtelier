@@ -530,6 +530,22 @@ pub(crate) fn power_session_active(app: &AppHandle) {
     log_startup("power: session active — validated"); // persisted breadcrumb
 }
 
+/// In-world nudge that teaches drawing-to-cast (Phase 13.2): a dip-pen traces a sigil
+/// on the primary wallpaper with the line "Magic is not spoken here — it is drawn."
+/// Gated so it never nags — never once she has cast anything (the `discovered` map is
+/// non-empty), and at most a few times total — then never again.
+#[cfg(windows)]
+fn maybe_show_cast_hint(app: &AppHandle) {
+    const SHOW_LIMIT: u32 = 3;
+    let s = settings::get();
+    if !s.discovered.is_empty() || s.cast_hint_shown >= SHOW_LIMIT {
+        return;
+    }
+    settings::set_cast_hint_shown(s.cast_hint_shown + 1);
+    let _ = app.emit("gift:casthint", ());
+    log(app, format!("cast-hint shown ({}/{SHOW_LIMIT})", s.cast_hint_shown + 1));
+}
+
 // ---------------------------------------------------------------------------
 // The gift: secret storybook surfacing + birthday auto-bloom
 // ---------------------------------------------------------------------------
@@ -1410,6 +1426,14 @@ fn preview_petrify(app: AppHandle) -> String {
     "previewing misfire".into()
 }
 
+/// Preview the in-world casting nudge on demand (it auto-shows only a few times, and
+/// only before her first cast — this plays it regardless for review).
+#[tauri::command]
+fn preview_cast_hint(app: AppHandle) -> String {
+    let _ = app.emit("gift:casthint", ());
+    "previewing casting nudge".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1565,6 +1589,7 @@ pub fn run() {
             conjure_bird,
             preview_silvereve,
             preview_petrify,
+            preview_cast_hint,
             set_viz_source,
             viz_status,
             casting::classify_sigil,
@@ -1620,6 +1645,15 @@ pub fn run() {
                     spawn_buddy(_handle.clone());
                     spawn_birthday_watch(_handle.clone());
                     power::start(_handle.clone()); // sleep/wake + lock/unlock recovery
+                    // A gentle in-world nudge so she discovers drawing-to-cast (13.2),
+                    // delayed so the scene is up; self-gating so it never nags.
+                    {
+                        let h = _handle.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(22));
+                            maybe_show_cast_hint(&h);
+                        });
+                    }
                     if settings::get().desktop_interactive {
                         hook::set_enabled(_handle, true);
                     }
