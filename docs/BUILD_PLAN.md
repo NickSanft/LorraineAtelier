@@ -352,7 +352,21 @@ Five user-selected items from the research-curated backlog (workflow `wf_fa08a7e
 **13.6 — Brushbuddy default = the hand-drawn walk sprite (user request, 2026-06-23).** Swap the default buddy from the built-in SVG to the recipient-drawn fudemushi walk cycle (`mockup/assets/Brushbuddy`: a GIF + 18 left-facing PNG frames). The source is black line-art on an opaque light card with NO body fill (interior = card colour), so `scripts/buddy-frames.mjs` converts it to WHITE INK on transparency (alpha from line darkness, recoloured white), crops to the union walk-cycle bbox + box-downscales → `public/buddy/frame_00..17.png`. `wallpaper.ts` cycles the frames on the buddy `<img>` (advance on movement, **5× while picked up** per the request), flips for direction (frames face left, opposite the old SVG), and inverts to dark ink in Day mode for legibility; the old SVG is superseded; a custom `buddySprite` still overrides with a static image. **Effort: M.**
 
 **Exit criteria:** the wallpaper survives sleep/lock/resume unattended; a first-time user discovers casting on her own; the scene rests at night; a worker-thread fault self-heals; lanterns glow at dusk; the buddy is the hand-drawn walker — all low-GPU, photosensitivity-safe, and covered by the visual-regression harness where applicable. Then re-cut the installer and soak-test (**paused at the user's request 2026-06-23**).
-**Effort: L (five M slices)**
+**Effort: L (six M slices)**
+
+---
+
+### Phase 14 — "New pages" (planned 2026-06-25; before 07-25 if time allows, else post-gift)
+Three more research-backed enhancements the user selected from the runner-up backlog (see the gift-idea-backlog memory). All are presentation / feel polish on proven plumbing — **no recognizer or casting-loop changes** (those stay deliberately untouched). Build each as a reviewable slice; re-cut the installer afterward.
+
+**14.1 — Coco's picture-book dedication.** *(the emotional climax, elevated)* Reframe the existing "For Lorraine" dedication from a single parchment panel into a 2–3 page **hand-bound spellbook**: a soft page-curl / cross-fade between paragraphs, a stitched binding, dip-pen margins, and the secret pentacle inked onto the final page. *Witch Hat Atelier* opens with Coco copying seals into a picture book, so the most personal moment takes the form of the manga's origin image. Presentation-only — the strings already live in `settings.gift.paragraphs`, so risk is contained to one surface. Keep the page-turn **snappy and reduced-motion-safe** (an instant cross-fade when reduced) so it never delays the words. Files: `overlay.html` (storybook markup + CSS) + `src/overlay.ts` (`openStorybook` — paginate the paragraphs + page nav via click / a ▸ control / Escape). **Effort: M.**
+
+**14.2 — Tempo-locked seal.** *("it really listens")* Estimate the music's tempo from the beat data the audio path already produces (smooth the recent inter-beat intervals into a BPM / pace scalar) and let the visualizer seal's **rotation + ripple cadence follow it** — a ballad turns slowly and grandly, an upbeat track quickens. Only meaningful when **Attuned** (real WASAPI audio); the generative source stays calm. Carry the tempo scalar through the existing `viz:bands` pipe (a spare `BandFrame` slot). Files: `src-tauri/src/audio.rs` (debounced beat-interval → tempo estimate, stamped into the frame) and/or `src/atelier/audio/source.ts`, plus `src/atelier/draw/seal.ts` (scale ring rotation + ripple expansion by tempo, smoothed so it never jumps; flashing stays ≤3 Hz). Update the seal visual-regression baseline if its resting look shifts. **Effort: M.**
+
+**14.3 — Name your fudemushi.** *(turns the sprite into HER creature)* A one-time, optional **naming rite**: a persisted `buddy_name` set from the control panel (NOT the wallpaper, which takes no input), surfaced where it feels personal — the **tray tooltip/menu status** and the **birthday card** (e.g. *"{name} the brushbuddy"*). Blank = unnamed (today's behaviour). Files: `settings.rs` (`buddy_name` + setter), `lib.rs` (`set_buddy_name` command + tray status text), `control.ts` + `index.html` (a name field), and the birthday surface (`surface_storybook` / overlay) to greet by name. **Effort: M.**
+
+**Exit criteria:** the dedication turns like a hand-bound book; the seal's pace tracks the music when Attuned; the buddy can be named and that name appears in the tray + birthday card — all on proven plumbing, no recognizer/casting changes. Re-cut the installer after.
+**Effort: M (three M slices)**
 
 ---
 
