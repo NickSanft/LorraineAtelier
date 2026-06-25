@@ -22,7 +22,7 @@ type Pt = { x: number; y: number };
 interface SpellDto { key: string; element: string; glyph: string; app: string; hue: string; sigil: string }
 interface SigilDto { kind: string; base: string; score: number; sideways: boolean; jutDir: number; secret: boolean; spell: SpellDto | null; symmetry: number; steadiness: number }
 interface RingDto { closed: boolean; encloses: boolean; inverse: boolean; score: number; gap: number }
-interface FireDto { launched: boolean; cursed: boolean; dismissed: boolean; message: string; icon: string; ink: number; key: string }
+interface FireDto { launched: boolean; cursed: boolean; dismissed: boolean; message: string; icon: string; ink: number; key: string; born: boolean }
 
 const TEAL = "#2fd6c6";
 const GOLD = "#e8b84a";
@@ -48,6 +48,11 @@ const sbBook = document.getElementById("sbBook")!;
 const sbCoverEl = document.getElementById("sbCover")!;
 const sbDots = document.getElementById("sbDots")!;
 const sbTurn = document.getElementById("sbTurn") as HTMLButtonElement;
+const namingRite = document.getElementById("namingRite") as HTMLElement;
+const nrBug = document.getElementById("nrBug") as HTMLImageElement;
+const nrInput = document.getElementById("nrInput") as HTMLInputElement;
+const nrName = document.getElementById("nrName") as HTMLButtonElement;
+const nrLater = document.getElementById("nrLater") as HTMLButtonElement;
 
 interface GiftDto { recipientName: string; heading: string; paragraphs: string[]; signature: string; birthday: string }
 
@@ -76,14 +81,17 @@ let prepared: { inverse: boolean; ringScore: number } | null = null;
 let blooming = false;
 let bloomRaf = 0;
 let storybookOpen = false;
+let namingOpen = false; // the first-cast naming rite is on screen (captures Enter/Esc)
 
 function reset() {
   cancelAnimationFrame(bloomRaf);
   phase = "sigil"; strokes = []; curStroke = null; detected = null;
   sigilCenter = null; sigilScore = 0; sigilDiag = 0; prepared = null; blooming = false;
   storybook.style.display = "none"; // back to the casting slate
+  namingRite.style.display = "none";
   slate.style.display = "flex";
   storybookOpen = false;
+  namingOpen = false;
   phaseLabel.textContent = "Draw the central sigil";
   hudGlyph.textContent = "·"; hudGlyph.style.color = "var(--c-soft)";
   hudName.textContent = "Awaiting sigil"; hudApp.textContent = "—";
@@ -348,6 +356,11 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
         // Petrification creeps over the slate, then recedes (blooming stays true so
         // the idle loop doesn't draw over it); only then dismiss.
         petrify(() => { blooming = false; showToast(fire.message, fire.icon); setTimeout(hide, 450); });
+      } else if (fire.born) {
+        // The very first cast: don't toast or close — the seal gives way to the
+        // fudemushi naming rite (the companion has just hatched from this spell).
+        blooming = false;
+        openNamingRite();
       } else {
         blooming = false;
         showToast(fire.message, fire.icon);
@@ -583,6 +596,35 @@ async function openStorybook() {
   } catch { /* mount failed — storybook mode is at least active (no slate) */ }
 }
 
+// The first-cast hatching ceremony: the casting seal gives way to a parchment card
+// where the newly-hatched fudemushi uncurls and Lorraine names it. The overlay still
+// holds focus (the first cast launches no app), so the name field can be typed into.
+function openNamingRite() {
+  blooming = false;
+  scrim.style.display = "block";   // keep the dimmed backdrop behind the card
+  slate.style.display = "none";
+  storybook.style.display = "none";
+  storybookOpen = false;
+  namingOpen = true;
+  nrInput.value = "";
+  namingRite.style.display = "block";
+  // Restart the entrance + hatch animations on each open so the dev preview replays.
+  namingRite.style.animation = "none"; void namingRite.offsetWidth; namingRite.style.animation = "";
+  nrBug.style.animation = "none"; void nrBug.offsetWidth; nrBug.style.animation = "";
+  setTimeout(() => nrInput.focus(), 60);
+}
+
+// Close the rite: persist the name (if given), then hide the overlay. "later" leaves
+// the fudemushi unnamed — it can be named anytime from the control panel.
+function finishNaming(save: boolean) {
+  if (!namingOpen) return;
+  namingOpen = false;
+  const name = nrInput.value.trim();
+  if (save && name) invoke("set_buddy_name", { name }).catch(() => {});
+  namingRite.style.display = "none";
+  hide();
+}
+
 // Rust shows/hides the overlay window; this just sets what's on it. casting →
 // scrim + slate; idle → nothing (the window is about to be hidden by Rust).
 function setOverlayMode(m: string) {
@@ -594,7 +636,9 @@ function setOverlayMode(m: string) {
     scrim.style.display = "none";
     slate.style.display = "none";
     storybook.style.display = "none";
+    namingRite.style.display = "none";
     storybookOpen = false;
+    namingOpen = false;
   }
 }
 
@@ -606,7 +650,15 @@ async function hide() {
 document.getElementById("btnClear")!.addEventListener("click", reset);
 document.getElementById("btnDismiss")!.addEventListener("click", () => { reset(); hide(); });
 sbTurn.addEventListener("click", turnPage); // turn the page, or close the book on the last
+nrName.addEventListener("click", () => finishNaming(true));
+nrLater.addEventListener("click", () => finishNaming(false));
+nrInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); finishNaming(true); } });
 window.addEventListener("keydown", (e) => {
+  if (namingOpen) {
+    if (e.key === "Enter") { e.preventDefault(); finishNaming(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finishNaming(false); }
+    return;
+  }
   if (e.key === "Escape") { reset(); hide(); }
   else if (storybookOpen && pageFlip) {
     if (e.key === "ArrowRight" || e.key === " ") turnPage();
@@ -620,12 +672,15 @@ listen<string>("overlay:mode", (e) => setOverlayMode(e.payload));
 // The birthday auto-bloom (and the Preview button) surface the dedication here.
 listen("gift:birthday", () => openStorybook());
 
+// The dev "Preview naming rite" button surfaces the first-cast ceremony here.
+listen("gift:naming", () => openNamingRite());
+
 // Preview the cursed-misfire Petrification on demand (the dev "Preview misfire"
 // button) — a representative full misfire on a sample earth seal, then it passes.
 listen("preview:petrify", () => {
   if (blooming) return;
   reset();
-  bloom("square", 78, false, false, 0, { launched: false, cursed: true, dismissed: false, message: "A miscast — the seal curdles to crystal, then passes.", icon: "🜨", ink: 0, key: "earth" });
+  bloom("square", 78, false, false, 0, { launched: false, cursed: true, dismissed: false, message: "A miscast — the seal curdles to crystal, then passes.", icon: "🜨", ink: 0, key: "earth", born: false });
 });
 
 // Colorblind-safe element palette (a `cb` class on body swaps the --el-* vars).

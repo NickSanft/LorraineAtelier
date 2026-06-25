@@ -873,7 +873,7 @@ fn spawn_buddy(app: AppHandle) {
         // In "primary only" mode the buddy stays on the primary and we stream its
         // position only there, so secondaries produce no damage and stay static.
         let mut last_owner: Option<usize> = None;
-        let mut last_buddy_enabled: Option<bool> = None;
+        let mut last_roam: Option<bool> = None;
         use std::sync::atomic::Ordering::Relaxed;
 
         loop {
@@ -887,7 +887,10 @@ fn spawn_buddy(app: AppHandle) {
             }
             let s = settings::get();
             let primary_only = s.primary_only;
-            let buddy_enabled = s.buddy_enabled;
+            // The fudemushi only roams once it has HATCHED (the first-ever cast set
+            // buddy_revealed) AND the buddy is enabled. Existing installs auto-reveal
+            // via a non-empty `discovered`, so an upgrade never makes it vanish.
+            let roam = s.buddy_enabled && (s.buddy_revealed || !s.discovered.is_empty());
             let prim = mons.iter().position(|m| m.primary).unwrap_or(0);
 
             if !started {
@@ -1004,7 +1007,7 @@ fn spawn_buddy(app: AppHandle) {
             let scale = (om.height as f64 / 960.0).clamp(1.0, 2.2);
             buddy::HW.store((24.0 * scale).round() as i64, Relaxed);
             buddy::HH.store((21.0 * scale).round() as i64, Relaxed);
-            buddy::VISIBLE.store(buddy_enabled, Relaxed);
+            buddy::VISIBLE.store(roam, Relaxed);
 
             // Eyes: closed while napping; otherwise the occasional blink.
             let eye_target = if napping {
@@ -1028,10 +1031,10 @@ fn spawn_buddy(app: AppHandle) {
             // monitors just on a structural change — owner moved, or the buddy was
             // toggled — so they learn primary/insets and show/hide the buddy; and we
             // stream per-frame to the owner only while the buddy is enabled.
-            let structural = Some(owner) != last_owner || Some(buddy_enabled) != last_buddy_enabled;
-            let emit_all = (buddy_enabled && !primary_only) || structural;
+            let structural = Some(owner) != last_owner || Some(roam) != last_roam;
+            let emit_all = (roam && !primary_only) || structural;
             for i in 0..n {
-                let send = if emit_all { true } else if i == owner { buddy_enabled } else { false };
+                let send = if emit_all { true } else if i == owner { roam } else { false };
                 if !send {
                     continue;
                 }
@@ -1041,7 +1044,7 @@ fn spawn_buddy(app: AppHandle) {
                     label: label.clone(),
                     x: x - m.x as f64,
                     y: y - m.y as f64 + bob_off,
-                    visible: buddy_enabled && i == owner,
+                    visible: roam && i == owner,
                     flip,
                     eye,
                     primary: m.primary,
@@ -1054,7 +1057,7 @@ fn spawn_buddy(app: AppHandle) {
                 let _ = app.emit_to(label.as_str(), "buddy", msg);
             }
             last_owner = Some(owner);
-            last_buddy_enabled = Some(buddy_enabled);
+            last_roam = Some(roam);
         }
     });
 }
@@ -1506,6 +1509,44 @@ fn set_ring_speed(app: AppHandle, speed: f32) -> String {
     format!("ring speed -> {s}")
 }
 
+/// Reveal/unreveal the fudemushi directly (the first cast normally hatches it).
+/// Persisted + broadcast so the wallpaper shows/hides it live.
+#[tauri::command]
+fn set_buddy_revealed(app: AppHandle, revealed: bool) -> String {
+    settings::set_buddy_revealed(revealed);
+    let _ = app.emit("settings:buddyrevealed", revealed);
+    format!("buddy_revealed={revealed}")
+}
+
+/// Name (or rename) the fudemushi. Trimmed + capped to a sensible length. Persisted +
+/// broadcast so the control panel and wallpaper reflect it live.
+#[tauri::command]
+fn set_buddy_name(app: AppHandle, name: String) -> String {
+    let name: String = name.trim().chars().take(24).collect();
+    settings::set_buddy_name(name.clone());
+    let _ = app.emit("settings:buddyname", name.clone());
+    format!("buddy_name={name}")
+}
+
+/// Replay the fudemushi's birth (hatch) on demand — a dev preview that re-emits the
+/// `buddy:born` signal without changing any state, so the moment can be seen.
+#[tauri::command]
+fn preview_buddy_birth(app: AppHandle) -> String {
+    let _ = app.emit("buddy:born", ());
+    "previewing fudemushi birth".into()
+}
+
+/// Preview the naming rite (the first-cast hatching ceremony) on demand: position +
+/// show + focus the overlay on the active monitor, then emit `gift:naming` so it
+/// swaps to the naming view. Does not change any saved state.
+#[tauri::command]
+fn preview_naming_rite(app: AppHandle) -> String {
+    #[cfg(windows)]
+    open_casting_impl(&app); // make the overlay interactive on the active monitor
+    let _ = app.emit("gift:naming", ());
+    "previewing naming rite".into()
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1675,6 +1716,10 @@ pub fn run() {
             preview_quiet,
             preview_lanterns,
             set_ring_speed,
+            set_buddy_revealed,
+            set_buddy_name,
+            preview_buddy_birth,
+            preview_naming_rite,
             set_viz_source,
             viz_status,
             casting::classify_sigil,

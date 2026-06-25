@@ -100,6 +100,7 @@ interface SettingsDto {
   quietStart: string;
   quietEnd: string;
   buddySprite: string;
+  buddyName?: string;
   widgetLayout: Record<string, { x: number; y: number; scale: number; vertical?: boolean }>;
 }
 
@@ -291,6 +292,12 @@ async function main() {
     append("bindings reset to defaults");
   });
 
+  const buddyNameInput = document.getElementById("buddyName") as HTMLInputElement;
+  buddyNameInput.value = (await invoke<SettingsDto>("get_settings").then((s) => s.buddyName).catch(() => "")) || "";
+  buddyNameInput.addEventListener("change", () => {
+    const name = buddyNameInput.value.trim();
+    invoke("set_buddy_name", { name }).then(() => append(`fudemushi named → ${name || "(unnamed)"}`));
+  });
   const buddySpriteInput = document.getElementById("buddySprite") as HTMLInputElement;
   buddySpriteInput.value = (await invoke<SettingsDto>("get_settings").then((s) => s.buddySprite).catch(() => "")) || "";
   buddySpriteInput.addEventListener("change", () => {
@@ -397,6 +404,8 @@ async function main() {
   document.getElementById("previewSilver")!.addEventListener("click", () => invoke("preview_silvereve").then(() => append("previewing Silver Eve")));
   document.getElementById("previewMisfire")!.addEventListener("click", () => invoke("preview_petrify").then(() => append("previewing misfire (Petrification)")));
   document.getElementById("previewCastHint")!.addEventListener("click", () => invoke("preview_cast_hint").then(() => append("previewing casting nudge")));
+  document.getElementById("previewBuddyBirth")!.addEventListener("click", () => invoke("preview_buddy_birth").then(() => append("previewing fudemushi birth")));
+  document.getElementById("previewNaming")!.addEventListener("click", () => invoke("preview_naming_rite").then(() => append("previewing naming rite")));
 
   document.getElementById("reattach")!.addEventListener("click", () => invoke("reattach_wallpaper").then(() => append("re-attach requested")));
   document.getElementById("overlay")!.addEventListener("click", () => invoke("toggle_overlay"));

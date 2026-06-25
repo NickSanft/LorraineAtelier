@@ -79,6 +79,8 @@
         <button id="previewSilver">Preview Silver Eve</button>
         <button id="previewMisfire">Preview misfire</button>
         <button id="previewCastHint">Preview casting nudge</button>
+        <button id="previewBuddyBirth">Preview fudemushi</button>
+        <button id="previewNaming">Preview naming rite</button>
       </div>
       <div class="toggles" style="align-items:center">
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#efe6d2;font-family:'Cinzel',serif;letter-spacing:.04em">Framerate
@@ -128,14 +130,19 @@
       <div id="forbiddenPage"></div>
     </div>
 
-    <!-- Brushbuddy sprite swap (blank = built-in fudemushi) -->
+    <!-- Brushbuddy: the fudemushi's name + an optional custom sprite (blank = built-in) -->
     <div class="panel">
-      <h2>Brushbuddy sprite</h2>
+      <h2>Brushbuddy</h2>
       <div style="display:flex; gap:8px; align-items:center;">
-        <input id="buddySprite" placeholder="path or URL to your own sprite (blank = built-in)" spellcheck="false" style="flex:1; min-width:0;" />
+        <span class="hint" style="width:92px">Companion name</span>
+        <input id="buddyName" maxlength="24" placeholder="name your fudemushi" spellcheck="false" style="flex:1; min-width:0;" />
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="hint" style="width:92px">Custom sprite</span>
+        <input id="buddySprite" placeholder="path or URL (blank = built-in)" spellcheck="false" style="flex:1; min-width:0;" />
         <button id="buddySpriteClear" class="test">Built-in</button>
       </div>
-      <div class="hint">PNG / SVG / GIF — a local file under your home or app-data folder, or an http(s) URL. Your sprite flips with the walk direction; only the built-in one blinks.</div>
+      <div class="hint">The fudemushi hatches the first time a spell is cast, and is named then — but you can rename it here anytime. Custom sprite: PNG / SVG / GIF (a local file under your home or app-data folder, or an http(s) URL).</div>
     </div>
 
     <!-- Widget layout: drag the clock/seal in the preview; slider resizes the selected one -->

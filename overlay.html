@@ -76,6 +76,37 @@
         backdrop-filter: blur(8px); font-size: 14px; color: var(--c-text); box-shadow: 0 8px 28px rgba(8,6,14,.45); pointer-events: none;
       }
       #toast .ic { color: var(--c-gold); font-size: 15px; }
+      /* Naming rite — the first-cast hatching ceremony: a parchment card on the dark
+         slate where the new fudemushi uncurls into being and is given a name. */
+      #namingRite { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); animation: nr-in .6s cubic-bezier(.2,.9,.3,1) both; }
+      @keyframes nr-in { from { opacity: 0; transform: translate(-50%,-44%) scale(.96); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+      .nr-card { position: relative; overflow: hidden; width: min(86vw, 420px); padding: 28px 30px 24px; border-radius: 14px; text-align: center;
+        background: linear-gradient(168deg, #f7efda, #ecdfc2); color: #33271a;
+        box-shadow: inset 0 0 0 1px rgba(120,90,58,.3), inset 0 0 60px rgba(120,90,58,.12), 0 22px 60px rgba(8,6,14,.55); }
+      .nr-card::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5; mix-blend-mode: multiply;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E"); }
+      .nr-bugwrap { position: relative; height: 84px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 4px; }
+      .nr-bugwrap::before { content: ""; position: absolute; left: 50%; bottom: 2px; width: 130px; height: 130px; transform: translate(-50%, 34%); border-radius: 50%;
+        background: radial-gradient(circle, rgba(232,184,74,.5), rgba(47,214,198,.18) 46%, transparent 68%); animation: nr-glow 2.4s ease-in-out infinite; }
+      @keyframes nr-glow { 0%, 100% { opacity: .5; } 50% { opacity: .95; } }
+      #nrBug { position: relative; width: 74px; height: auto; transform-origin: 50% 100%; image-rendering: auto;
+        filter: invert(1) drop-shadow(0 2px 3px rgba(80,50,20,.4));
+        animation: nr-hatch 1s cubic-bezier(.34,1.56,.64,1) both, nr-wiggle 3.2s ease-in-out 1.05s infinite; }
+      @keyframes nr-hatch { 0% { transform: scale(.05) translateY(16px); opacity: 0; } 55% { opacity: 1; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
+      @keyframes nr-wiggle { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
+      .nr-h { font-family: "Cinzel", serif; font-size: 19px; letter-spacing: .05em; color: #7a5a2a; margin: 2px 0 8px; }
+      .nr-sub { font-size: 14.5px; line-height: 1.55; color: #5a4628; margin: 0 0 18px; }
+      #nrInput { position: relative; width: 100%; padding: 11px 14px; border-radius: 9px; border: 1px solid rgba(120,90,58,.5);
+        background: rgba(255,250,238,.72); color: #33271a; font-family: "EB Garamond", serif; font-size: 17px; text-align: center; outline: none; }
+      #nrInput::placeholder { color: rgba(90,70,40,.5); font-style: italic; }
+      #nrInput:focus { border-color: #b8862f; box-shadow: 0 0 0 3px rgba(184,134,47,.18); }
+      .nr-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+      #nrName { padding: 10px 22px; border-radius: 8px; border: 1px solid #b8862f; background: linear-gradient(180deg, #e8b84a, #cf9b34); color: #2a1f10;
+        cursor: pointer; font-family: "Cinzel", serif; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+      #nrName:hover { filter: brightness(1.07); }
+      #nrLater { padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(120,90,58,.35); background: transparent; color: #7a5a2a;
+        cursor: pointer; font-family: "Cinzel", serif; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; }
+      #nrLater:hover { border-color: #b8862f; }
     </style>
   </head>
   <body>
@@ -124,6 +155,19 @@
       <div id="sbNav" style="display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding:0 4px">
         <span id="sbDots" style="display:flex;gap:7px;align-items:center"></span>
         <button id="sbTurn" style="border:1px solid rgba(232,200,120,.5);background:rgba(22,20,36,.5);color:#efe6d2;cursor:pointer;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.2em;text-transform:uppercase;padding:9px 20px;border-radius:6px;backdrop-filter:blur(6px)">Turn the page ▸</button>
+      </div>
+    </div>
+    <!-- Naming rite — the first-cast hatching ceremony (the fudemushi emerges + is named). -->
+    <div id="namingRite">
+      <div class="nr-card">
+        <div class="nr-bugwrap"><img id="nrBug" src="/buddy/frame_00.png" alt="" /></div>
+        <div class="nr-h">A fudemushi has hatched</div>
+        <div class="nr-sub">From your very first spell, a little ink companion uncurled into being. What name will you give it?</div>
+        <input id="nrInput" maxlength="24" placeholder="a name…" spellcheck="false" autocomplete="off" />
+        <div class="nr-actions">
+          <button id="nrName">Name it ✦</button>
+          <button id="nrLater">later</button>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/overlay.ts"></script>

@@ -171,6 +171,7 @@ pub struct FireDto {
     icon: String,
     ink: i32,
     key: String,
+    born: bool, // this was the first-ever cast → the overlay runs the fudemushi naming rite
 }
 
 /// Payload broadcast to every wallpaper webview so each monitor blooms.
@@ -248,16 +249,25 @@ pub fn fire_spell(
 
     // Inscribe the element in the Tower of Tomes the first time it's cast (and keep
     // a running count); the spellbook panel refreshes on `tomes:changed`.
+    let mut first_cast = false;
     if spell.is_some() {
-        crate::settings::record_discovery(&key);
+        first_cast = crate::settings::record_discovery(&key);
         let _ = app.emit("tomes:changed", ());
+        if first_cast {
+            // The first spell ever cast HATCHES the fudemushi: mark it revealed (so it
+            // roams from now on) and tell the wallpaper to play its birth.
+            crate::settings::set_buddy_revealed(true);
+            let _ = app.emit("buddy:born", ());
+        }
     }
 
     // Cursed misfire on a confident, non-reversed, non-sideways cast. Canon: a
     // lop-sided (asymmetric) seal is unstable, so low symmetry raises the odds
     // (~10% at perfect symmetry → ~22% at fully lop-sided).
     let misfire_chance = 0.10 + (1.0 - symmetry.clamp(0.0, 1.0)) * 0.12;
-    let cursed = !inverse && !sideways && score >= 50 && rng_unit() < misfire_chance;
+    // Never curse the FIRST cast — her first spell is the birth of the fudemushi and
+    // must land cleanly (and keep the overlay focused for the naming rite).
+    let cursed = !inverse && !sideways && !first_cast && score >= 50 && rng_unit() < misfire_chance;
 
     let new_ink = (INK.load(Ordering::Relaxed) - 22).max(6);
     INK.store(new_ink, Ordering::Relaxed);
@@ -285,6 +295,10 @@ pub fn fire_spell(
         dismissed = true;
     } else if key == "light" {
         // Light is a cosmetic illumination (the bloom IS the effect); no app.
+    } else if first_cast {
+        // The very first spell gives LIFE, not an app: it hatches the fudemushi and
+        // the overlay opens the naming rite. Launching nothing keeps the overlay
+        // focused for that moment (an activated app would steal the keyboard).
     } else {
         // Resolve the user-configurable target. If the bound app is already running,
         // focus it (restoring if minimized) and keep it foreground after the overlay
@@ -317,7 +331,7 @@ pub fn fire_spell(
         (format!("The seal sputtered — {app_name} opened, barely."), "◌")
     };
 
-    FireDto { launched, cursed, dismissed, message, icon: icon.into(), ink: new_ink, key }
+    FireDto { launched, cursed, dismissed, message, icon: icon.into(), ink: new_ink, key, born: first_cast }
 }
 
 /// Launch (or focus) an element's bound app without drawing — for the Spell

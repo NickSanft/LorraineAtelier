@@ -89,6 +89,8 @@ pub struct Settings {
     pub frame_rate: u32, // wallpaper render cap in fps; 0 = monitor refresh rate
     pub primary_only: bool, // animate only the primary monitor; secondaries get the static OS wallpaper
     pub buddy_enabled: bool, // show + animate the brushbuddy
+    pub buddy_revealed: bool, // the fudemushi has hatched (set on the first-ever cast); gates roaming
+    pub buddy_name: String,   // the name given to the fudemushi (empty = still unnamed)
     pub cast_hint_shown: u32, // times the in-world "magic is drawn" nudge has shown (capped, then never)
     pub quiet_hours_enabled: bool, // dim the scene to "embers" during the quiet window
     pub quiet_start: String,       // "HH:MM" local — quiet window start
@@ -120,6 +122,8 @@ impl Default for Settings {
             frame_rate: 30,        // gentle default; lowest GPU/CPU
             primary_only: true,    // default: full scene on primary, static art elsewhere
             buddy_enabled: true,   // the brushbuddy roams by default
+            buddy_revealed: false, // hatches on the first cast (existing casters auto-revealed via `discovered`)
+            buddy_name: String::new(), // unnamed until the naming rite
             cast_hint_shown: 0,    // the casting nudge hasn't shown yet
             quiet_hours_enabled: true, // gift default: the atelier rests at night
             quiet_start: "22:00".into(),
@@ -260,6 +264,16 @@ pub fn set_buddy_enabled(v: bool) {
     save();
 }
 
+pub fn set_buddy_revealed(v: bool) {
+    store().lock().unwrap().buddy_revealed = v;
+    save();
+}
+
+pub fn set_buddy_name(name: String) {
+    store().lock().unwrap().buddy_name = name;
+    save();
+}
+
 pub fn set_cast_hint_shown(v: u32) {
     store().lock().unwrap().cast_hint_shown = v;
     save();
@@ -291,12 +305,17 @@ pub fn clear_widget_layout(name: &str) {
 }
 
 /// Record that an element was cast (first cast inscribes it in the Tower of Tomes).
-pub fn record_discovery(key: &str) {
-    {
+/// Returns `true` when this was the FIRST-EVER cast (the `discovered` map was empty
+/// before) — the signal the fudemushi uses to hatch.
+pub fn record_discovery(key: &str) -> bool {
+    let first_ever = {
         let mut s = store().lock().unwrap();
+        let was_empty = s.discovered.is_empty();
         *s.discovered.entry(key.to_string()).or_insert(0) += 1;
-    }
+        was_empty
+    };
     save();
+    first_ever
 }
 
 pub fn set_last_birthday_year(year: i32) {

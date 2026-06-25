@@ -230,6 +230,7 @@ const buddyEl = document.getElementById("buddy");
 const buddyEyes = document.getElementById("buddyEyes");
 const buddyImg = document.getElementById("buddyImg") as HTMLImageElement | null;
 const buddySvg = document.getElementById("buddySvg") as SVGElement | null;
+const buddyLabel = document.getElementById("buddyLabel");
 const clockEl = document.getElementById("clock");
 const sealEl = document.getElementById("seal");
 const topStripEl = document.getElementById("topstrip");
@@ -303,6 +304,16 @@ const BUDDY_FRAME_URLS = Array.from({ length: BUDDY_FRAMES }, (_, i) => `/buddy/
 BUDDY_FRAME_URLS.forEach((u) => { const im = new Image(); im.src = u; }); // preload → instant swaps
 let useFrames = true; // the walk frames are the default; false when a custom sprite is set
 let frameIdx = 0, frameAccum = 0, lastBx = NaN, lastBy = NaN;
+// One-time "hatch" ramp played when the fudemushi is born (first cast) or on the dev
+// preview — a scale-pop out of nothing + a gold/teal ink-glow, folded into the
+// per-frame buddy transform and counted down on each visible frame (~1.4 s at 30 Hz).
+const BORN_DUR = 42;
+let bornFrames = 0;
+// The fudemushi's given name + a drifting label that surfaces briefly when it is
+// (re)named and while it is picked up, then fades. LABEL_DUR ~ 3 s at 30 Hz.
+let buddyName = "";
+const LABEL_DUR = 92;
+let labelFrames = 0;
 function advanceBuddyFrame(m: BuddyMsg) {
   const moved = Number.isFinite(lastBx) ? Math.hypot(m.x - lastBx, m.y - lastBy) : 0;
   lastBx = m.x; lastBy = m.y;
@@ -342,6 +353,8 @@ function applyBuddySprite(src?: string) {
 }
 listen<string>("settings:buddySprite", (e) => applyBuddySprite(e.payload));
 listen<boolean>("settings:buddyenabled", (e) => { if (buddyEl) buddyEl.style.display = e.payload ? "" : "none"; });
+listen("buddy:born", () => { bornFrames = BORN_DUR; }); // the fudemushi hatches (first cast / dev preview)
+listen<string>("settings:buddyname", (e) => { buddyName = (e.payload || "").trim(); if (buddyName) labelFrames = LABEL_DUR; }); // (re)named → drift the label
 
 // Primary monitor shows the full widgets (clock + seal + top strip + dock);
 // secondary monitors stay calm — just art, ambient motes, glow, and the passing
@@ -389,19 +402,44 @@ listen<BuddyMsg>("buddy", (e) => {
   applyPrimary(m.primary);
   applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
   if (!buddyEl) return;
-  buddyEl.style.opacity = m.visible ? "1" : "0";
-  if (!m.visible) return; // hidden (off its monitor, or buddy disabled): skip transform → no damage
+  if (!m.visible) { buddyEl.style.opacity = "0"; if (buddyLabel) buddyLabel.style.opacity = "0"; return; } // hidden (off its monitor, or not yet hatched): skip transform → no damage
   if (useFrames) advanceBuddyFrame(m); // step the walk cycle (5x while held)
   // While held, the buddy lifts (scales up) and gains a warm glow — the "picked up" cue.
   const lift = m.held ? 1.16 : 1;
   // The walk frames face LEFT, the opposite of the old SVG, so invert the flip for them.
   const sx = (useFrames ? -m.flip : m.flip) * uiScale * lift;
+  // Birth (hatch) ramp: a one-time scale-pop out of nothing + a swelling gold/teal
+  // ink-glow, played only on the frames right after the fudemushi is born.
+  let bf = 1, bornGlow = "";
+  if (bornFrames > 0) {
+    const p = 1 - bornFrames / BORN_DUR; // 0 → 1 progress
+    const c1 = 1.70158, c3 = c1 + 1;
+    bf = 0.1 + 0.9 * (1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)); // easeOutBack pop
+    const g = Math.sin(Math.min(1, p * 1.15) * Math.PI); // glow swells then fades
+    bornGlow = ` drop-shadow(0 0 ${(5 + g * 20).toFixed(1)}px var(--c-gold)) drop-shadow(0 0 ${(2 + g * 11).toFixed(1)}px var(--c-teal))`;
+    buddyEl.style.opacity = Math.min(1, p * 1.7).toFixed(3);
+    bornFrames--;
+  } else {
+    buddyEl.style.opacity = "1";
+  }
   buddyEl.style.transform =
-    `translate(${m.x - 44 - insetLeftCss}px, ${m.y - 22 - insetTopCss}px) scale(${sx}, ${uiScale * lift})`;
-  buddyEl.style.filter = m.held
+    `translate(${m.x - 44 - insetLeftCss}px, ${m.y - 22 - insetTopCss}px) scale(${sx * bf}, ${uiScale * lift * bf})`;
+  buddyEl.style.filter = (m.held
     ? "drop-shadow(0 3px 6px rgba(8,6,14,.5)) drop-shadow(0 0 9px var(--c-gold))"
-    : "drop-shadow(0 1px 3px rgba(8,6,14,.5))";
+    : "drop-shadow(0 1px 3px rgba(8,6,14,.5))") + bornGlow;
   if (buddyEyes) buddyEyes.style.transform = `scaleY(${m.eye.toFixed(3)})`;
+  // The drifting name label: held keeps it up; otherwise it lingers then fades. It
+  // tracks the sprite, centred just above it (CSS eases the opacity in/out).
+  if (buddyLabel) {
+    if (m.held) labelFrames = LABEL_DUR; else if (labelFrames > 0) labelFrames--;
+    const showLabel = buddyName.length > 0 && (m.held || labelFrames > 0);
+    if (showLabel) {
+      if (buddyLabel.textContent !== buddyName) buddyLabel.textContent = buddyName;
+      buddyLabel.style.transform =
+        `translate(${(m.x - insetLeftCss).toFixed(1)}px, ${(m.y - insetTopCss - 34 * uiScale).toFixed(1)}px) translateX(-50%)`;
+    }
+    buddyLabel.style.opacity = showLabel ? "1" : "0";
+  }
 }, { target: selfLabel });
 
 // ---- cast bloom: origami unfold driven by Rust `cast:fire` (broadcast to every
@@ -853,8 +891,8 @@ function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; checkQuiet(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
