@@ -2,6 +2,7 @@ export {}; // module scope
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { PageFlip } from "page-flip/dist/js/page-flip.module.js";
 import { drawGlyphPath } from "./atelier/draw/viz";
 import type { Sigil } from "./atelier/palette";
 
@@ -43,7 +44,7 @@ const toastMsg = document.getElementById("toastMsg")!;
 const slate = document.getElementById("slate") as HTMLElement;
 const scrim = document.getElementById("scrim") as HTMLElement;
 const storybook = document.getElementById("storybook") as HTMLElement;
-const sbPage = document.getElementById("sbPage")!;
+const sbBook = document.getElementById("sbBook")!;
 const sbDots = document.getElementById("sbDots")!;
 const sbTurn = document.getElementById("sbTurn") as HTMLButtonElement;
 
@@ -461,92 +462,105 @@ function showToast(msg: string, icon: string) {
   toastTimer = window.setTimeout(() => { toast.style.display = "none"; }, 4200);
 }
 
-// The dedication is a small hand-bound spellbook (14.1): the heading + paragraphs +
-// signature are paginated; turning a page cross-fades/slides the next in, and the
-// final page bears the inked pentacle. Snappy + reduced-motion-safe (instant swap).
+// The dedication is a leather-bound spellbook (14.1, soft-bend via StPageFlip): a
+// closed cover (debossed ✦) swings open, then parchment pages flip with a real page
+// bend; the final page bears the inked pentacle. The words are mounted before any
+// motion, and reduced-motion makes every flip instant.
 const prefersReduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-let sbPages: HTMLElement[] = [];
-let sbCur = 0;
+let pageFlip: PageFlip | null = null;
+let sbCur = 0; // current page index (0 = cover)
+let sbTotal = 0;
 
-function buildPages(gift: GiftDto): HTMLElement[] {
+let sbContent = 0; // number of dedication (right-hand) pages
+
+function blankLeaf(): HTMLElement {
+  const b = document.createElement("div");
+  b.className = "sb-leaf sb-pg sb-blank";
+  return b;
+}
+
+function buildBookPages(gift: GiftDto): HTMLElement[] {
+  const pages: HTMLElement[] = [];
+  // Each opening = a BLANK left page + the dedication on the right page. A leading
+  // blank starts the book on (blank | first page); a trailing blank backs the last
+  // page so a flip never reveals empty space. No cover leaves (they render as stray
+  // dark pages in a two-page spread).
   const heading = gift.recipientName ? `For ${gift.recipientName}` : gift.heading;
   const paras = gift.paragraphs.length ? gift.paragraphs : [""];
-  return paras.map((p, i) => {
-    const page = document.createElement("div");
+  sbContent = paras.length;
+  paras.forEach((p, i) => {
+    pages.push(blankLeaf());
+    const leaf = document.createElement("div");
+    leaf.className = "sb-leaf sb-pg";
+    const inner = document.createElement("div");
+    inner.className = "sb-pg-inner";
     if (i === 0) {
-      const h = document.createElement("div");
-      h.textContent = heading;
-      h.style.cssText = "font-family:'Cinzel',serif;font-size:23px;letter-spacing:.1em;text-align:center;color:#7a5a2a;margin-bottom:4px";
-      page.appendChild(h);
-      const o = document.createElement("div");
-      o.textContent = "✦";
-      o.style.cssText = "text-align:center;color:#9c6f2a;font-size:15px;margin-bottom:20px";
-      page.appendChild(o);
+      const h = document.createElement("div"); h.className = "sb-h"; h.textContent = heading; inner.appendChild(h);
+      const o = document.createElement("div"); o.className = "sb-o"; o.textContent = "✦"; inner.appendChild(o);
     }
-    const para = document.createElement("p");
-    para.textContent = p;
-    para.style.cssText = "font-size:16.5px;line-height:1.74;margin:0 0 14px";
-    page.appendChild(para);
+    const para = document.createElement("p"); para.className = "sb-p"; para.textContent = p; inner.appendChild(para);
     if (i === paras.length - 1) {
-      const sig = document.createElement("div");
-      sig.textContent = gift.signature;
-      sig.style.cssText = "text-align:right;font-style:italic;margin-top:22px;color:#5a4628";
-      page.appendChild(sig);
-      const seal = document.createElement("div");
-      seal.textContent = "✦";
-      seal.style.cssText = "text-align:center;color:#9c6f2a;font-size:30px;margin-top:16px;opacity:.85";
-      page.appendChild(seal);
+      const sig = document.createElement("div"); sig.className = "sb-sig"; sig.textContent = gift.signature; inner.appendChild(sig);
+      const seal = document.createElement("div"); seal.className = "sb-seal"; seal.textContent = "✦"; inner.appendChild(seal);
     }
-    return page;
+    leaf.appendChild(inner);
+    pages.push(leaf);
   });
+  pages.push(blankLeaf()); // trailing blank → the last leaf always has a page behind it
+  return pages;
 }
 
 function updateSbNav() {
+  // one dot per dedication page; the right-hand content pages sit at odd indices (cover=0).
+  const active = Math.max(0, Math.min(sbContent - 1, Math.floor(sbCur / 2)));
   sbDots.innerHTML = "";
-  for (let i = 0; i < sbPages.length; i++) {
+  for (let i = 0; i < sbContent; i++) {
     const d = document.createElement("span");
-    d.style.cssText = `width:7px;height:7px;border-radius:50%;background:${i === sbCur ? "#9c6f2a" : "rgba(120,90,58,.3)"}`;
+    d.style.cssText = `width:7px;height:7px;border-radius:50%;background:${i === active ? "#e8b84a" : "rgba(232,200,120,.28)"}`;
     sbDots.appendChild(d);
   }
-  sbTurn.textContent = sbCur >= sbPages.length - 1 ? "Close the book ✦" : "Turn the page ▸";
-}
-
-function showPage(i: number, dir: number) {
-  sbCur = Math.max(0, Math.min(sbPages.length - 1, i));
-  sbPage.innerHTML = "";
-  if (sbPages[sbCur]) sbPage.appendChild(sbPages[sbCur]);
-  updateSbNav();
-  if (prefersReduced()) { sbPage.style.transition = "none"; sbPage.style.opacity = "1"; sbPage.style.transform = "none"; return; }
-  sbPage.style.transition = "none";
-  sbPage.style.opacity = "0";
-  sbPage.style.transform = `translateX(${dir * 20}px)`;
-  requestAnimationFrame(() => {
-    sbPage.style.transition = "opacity .3s ease, transform .3s ease";
-    sbPage.style.opacity = "1";
-    sbPage.style.transform = "translateX(0)";
-  });
+  // the last content spread starts at index sbTotal-3 (the trailing blank is last).
+  sbTurn.textContent = sbCur >= sbTotal - 3 ? "Close the book ✦" : "Turn the page ▸";
 }
 
 function turnPage() {
-  if (sbCur >= sbPages.length - 1) { reset(); hide(); } // last page → close the book
-  else showPage(sbCur + 1, 1);
+  if (!pageFlip || sbCur >= sbTotal - 3) { reset(); hide(); } // showing the last content → close
+  else pageFlip.flipNext();
 }
 
 async function openStorybook() {
   let gift: GiftDto | null = null;
   try { gift = (await invoke<{ gift: GiftDto }>("get_settings")).gift; } catch { /* */ }
-  sbPages = gift ? buildPages(gift) : [];
-  sbCur = 0;
-  sbPage.innerHTML = "";
-  if (sbPages[0]) sbPage.appendChild(sbPages[0]);
-  sbPage.style.transition = "none";
-  sbPage.style.opacity = "1";
-  sbPage.style.transform = "none";
-  updateSbNav();
+  // Enter storybook mode FIRST so a casting-mode race (or a failed mount) can never
+  // leave the casting slate showing.
   scrim.style.display = "block";
   slate.style.display = "none";
   storybook.style.display = "block";
   storybookOpen = true;
+  const reduced = prefersReduced();
+  if (pageFlip) { try { pageFlip.destroy(); } catch { /* */ } pageFlip = null; }
+  sbBook.innerHTML = "";
+  const pages = gift ? buildBookPages(gift) : [];
+  sbTotal = pages.length;
+  sbCur = 0;
+  updateSbNav();
+  try {
+    // mount on a FRESH child each time (StPageFlip leaves state on a reused element).
+    const book = document.createElement("div");
+    book.style.cssText = "width:100%;height:100%";
+    for (const p of pages) book.appendChild(p);
+    sbBook.appendChild(book);
+    pageFlip = new PageFlip(book, {
+      width: 340, height: 460, size: "stretch",
+      minWidth: 180, maxWidth: 380, minHeight: 252, maxHeight: 540,
+      showCover: false, usePortrait: false,
+      maxShadowOpacity: 0.45, drawShadow: true,
+      flippingTime: reduced ? 0 : 800,
+      useMouseEvents: !reduced, showPageCorners: !reduced, mobileScrollSupport: false,
+    });
+    pageFlip.loadFromHTML(pages);
+    pageFlip.on("flip", (e) => { sbCur = e.data; updateSbNav(); });
+  } catch { /* mount failed — storybook mode is at least active (no slate) */ }
 }
 
 // Rust shows/hides the overlay window; this just sets what's on it. casting →
@@ -572,8 +586,13 @@ async function hide() {
 document.getElementById("btnClear")!.addEventListener("click", reset);
 document.getElementById("btnDismiss")!.addEventListener("click", () => { reset(); hide(); });
 sbTurn.addEventListener("click", turnPage); // turn the page, or close the book on the last
-sbPage.addEventListener("click", () => { if (sbCur < sbPages.length - 1) showPage(sbCur + 1, 1); }); // tap the page to turn forward
-window.addEventListener("keydown", (e) => { if (e.key === "Escape") { reset(); hide(); } });
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { reset(); hide(); }
+  else if (storybookOpen && pageFlip) {
+    if (e.key === "ArrowRight" || e.key === " ") turnPage();
+    else if (e.key === "ArrowLeft" && sbCur > 0) pageFlip.flipPrev();
+  }
+});
 
 // Rust drives the overlay mode (it shows the window for casting, hides it after).
 listen<string>("overlay:mode", (e) => setOverlayMode(e.payload));

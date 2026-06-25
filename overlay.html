@@ -26,6 +26,23 @@
         animation: slate-in .5s cubic-bezier(.2,.9,.3,1) both;
       }
       @keyframes slate-in { from { opacity: 0; transform: translate(-50%,-46%) scale(.97); } to { opacity: 1; transform: translate(-50%,-50%) scale(1); } }
+      @keyframes sb-fade { from { opacity: 0; transform: translate(-50%,-48%); } to { opacity: 1; transform: translate(-50%,-50%); } }
+      /* The dedication spellbook (StPageFlip leaves). Parchment pages + a leather cover. */
+      #sbBook { --w: 100%; }
+      .sb-leaf { position: relative; overflow: hidden; }
+      .sb-pg { background: linear-gradient(170deg, #f7efda, #ecdfc2); color: #33271a; box-shadow: inset 0 0 0 1px rgba(120,90,58,.28), inset 0 0 60px rgba(120,90,58,.10); }
+      .sb-pg-inner { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 34px 30px; }
+      .sb-pg::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 15%; background: linear-gradient(to right, rgba(70,48,18,.22), transparent); pointer-events: none; }
+      .sb-pg::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5; mix-blend-mode: multiply; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E"); }
+      .sb-cover { background: linear-gradient(150deg, #5b4326, #3a2c18); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 2px rgba(232,200,120,.22), inset 0 0 50px rgba(0,0,0,.55); }
+      .sb-emblem { font-size: 66px; color: #caa24e; text-shadow: 0 2px 1px rgba(0,0,0,.6), 0 -1px 1px rgba(255,220,150,.35); }
+      .sb-h { font-family: "Cinzel", serif; font-size: 22px; letter-spacing: .1em; text-align: center; color: #7a5a2a; margin-bottom: 4px; }
+      .sb-o { text-align: center; color: #9c6f2a; font-size: 15px; margin-bottom: 18px; }
+      .sb-p { font-size: 16px; line-height: 1.7; margin: 0 0 12px; }
+      .sb-sig { text-align: right; font-style: italic; margin-top: 18px; color: #5a4628; }
+      .sb-seal { text-align: center; color: #9c6f2a; font-size: 28px; margin-top: 14px; opacity: .85; }
+      /* blank verso (the left page of each opening) — parchment with the gutter shade on its RIGHT (spine) edge */
+      .sb-blank::before { left: auto; right: 0; background: linear-gradient(to left, rgba(70,48,18,.22), transparent); }
       #phaseLabel { font-family: "Cinzel", serif; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: var(--c-gold); text-shadow: 0 0 14px rgba(232,184,74,.45); }
       #cast { width: min(58vmin, 520px); height: min(58vmin, 520px); display: block; cursor: crosshair; touch-action: none; }
       #hud {
@@ -94,17 +111,14 @@
     <div id="toast"><span class="ic" id="toastIcon">✦</span><span id="toastMsg"></span></div>
 
     <!-- Storybook / dedication (the gift's secret page; shown on the pentacle). -->
-    <div id="storybook" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,86vw);max-height:84vh;overflow:auto;background:linear-gradient(180deg,#f7efda,#ecdfc2);color:#33271a;border:1px solid rgba(120,90,58,.5);border-radius:10px;padding:38px 40px;box-shadow:0 28px 90px rgba(8,6,14,.65);animation:slate-in .6s cubic-bezier(.2,.9,.3,1) both">
-      <div style="position:absolute;inset:9px;border:1px solid rgba(120,90,58,.42);pointer-events:none;border-radius:7px"></div>
-      <div style="position:absolute;inset:14px;border:1px solid rgba(120,90,58,.22);pointer-events:none;border-radius:5px"></div>
-      <!-- page-stack hint on the right edge (a bound book of pages) -->
-      <div style="position:absolute;top:15px;bottom:15px;right:-5px;width:5px;border-radius:0 6px 6px 0;background:linear-gradient(90deg,rgba(120,90,58,.3),rgba(120,90,58,.1));pointer-events:none"></div>
-      <div style="position:absolute;top:18px;bottom:18px;right:-9px;width:4px;border-radius:0 5px 5px 0;background:rgba(120,90,58,.13);pointer-events:none"></div>
-      <!-- the current page (paginated dedication; filled by overlay.ts) -->
-      <div id="sbPage" style="position:relative;min-height:188px;will-change:opacity,transform;cursor:pointer"></div>
-      <div id="sbNav" style="display:flex;align-items:center;justify-content:space-between;margin-top:26px">
+    <div id="storybook" style="display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:fit-content;max-width:94vw;animation:sb-fade .5s ease both">
+      <!-- StPageFlip mounts the leather-bound spellbook here (open two-page spread). The
+           box matches the 2-page aspect so the leaves sit adjacent; the parchment + central
+           gutter gradient backs them so any spine seam reads as the binding, not a dark gap. -->
+      <div id="sbBook" style="height:min(56vh,440px);aspect-ratio:680/460;max-width:94vw;background:linear-gradient(90deg,#e6d8b8,#efe2c6 46%,#cab895 50%,#efe2c6 54%,#e6d8b8);border-radius:3px"></div>
+      <div id="sbNav" style="display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding:0 4px">
         <span id="sbDots" style="display:flex;gap:7px;align-items:center"></span>
-        <button id="sbTurn" style="border:1px solid rgba(120,90,58,.5);background:transparent;color:#33271a;cursor:pointer;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.2em;text-transform:uppercase;padding:9px 20px;border-radius:4px">Turn the page ▸</button>
+        <button id="sbTurn" style="border:1px solid rgba(232,200,120,.5);background:rgba(22,20,36,.5);color:#efe6d2;cursor:pointer;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.2em;text-transform:uppercase;padding:9px 20px;border-radius:6px;backdrop-filter:blur(6px)">Turn the page ▸</button>
       </div>
     </div>
     <script type="module" src="/src/overlay.ts"></script>

@@ -11,6 +11,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.1.0
         version: 2.11.1
+      page-flip:
+        specifier: ^2.0.7
+        version: 2.0.7
       solid-js:
         specifier: ^1.9.0
         version: 1.9.13
@@ -820,6 +823,9 @@ packages:
   node-releases@2.0.48:
     resolution: {integrity: sha512-1uz8041X6LoI6ZSdZacM9lVY28vuzDlSKitnpbSNK0RfKoIJkX29NBPVEFXhnuSuEOA9Ww0xnPJ+ILWbGAv8DA==}
     engines: {node: '>=18'}
+
+  page-flip@2.0.7:
+    resolution: {integrity: sha512-96lQFUUz7r/LZzEUZJ3yBIMEKU9+m8HMFDzTvTdD6P7Ag/wXINjp9n0W7b4wanwnDbQETo4uNUoL3zMqpFxwGA==}
 
   parse5@7.3.0:
     resolution: {integrity: sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==}
@@ -1649,6 +1655,8 @@ snapshots:
   nanoid@3.3.13: {}
 
   node-releases@2.0.48: {}
+
+  page-flip@2.0.7: {}
 
   parse5@7.3.0:
     dependencies:
