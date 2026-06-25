@@ -22,10 +22,11 @@ export interface SealState {
   outer: number; // outer ring rotation
   inner: number; // inner ring counter-rotation
   ripples: Ripple[];
+  tempo: number; // eased pace 0..1 (14.2); scales the rotation/ripple cadence
 }
 
 export function makeSealState(): SealState {
-  return { bass: 0, mid: 0, high: 0, loud: 0, prevBass: 0, beat: 0, outer: 0, inner: 0, ripples: [] };
+  return { bass: 0, mid: 0, high: 0, loud: 0, prevBass: 0, beat: 0, outer: 0, inner: 0, ripples: [], tempo: 0.35 };
 }
 
 /** Asymmetric one-pole: fast attack on a rise, slow release on a fall. */
@@ -39,7 +40,8 @@ function env(cur: number, target: number, attack: number, release: number): numb
  * mutates `s`. `beatHint` lets a real-audio source force a beat (else it's derived
  * from bass flux, so the generative signal stays calm).
  */
-export function stepSeal(s: SealState, b: Bands, dt: number, beatHint = false): void {
+export function stepSeal(s: SealState, b: Bands, dt: number, beatHint = false, tempo = 0.35, ringSpeed = 1): void {
+  s.tempo += (tempo - s.tempo) * Math.min(1, dt * 1.5); // ease toward the music's pace
   s.bass = env(s.bass, b.bass, 0.6, 0.12);
   s.mid = env(s.mid, b.mid, 0.5, 0.12);
   s.high = env(s.high, b.high, 0.7, 0.16);
@@ -53,10 +55,12 @@ export function stepSeal(s: SealState, b: Bands, dt: number, beatHint = false): 
   }
   s.beat = Math.max(0, s.beat - dt * 2.4);
 
-  s.outer += dt * (0.14 + s.bass * 0.7);
-  s.inner -= dt * (0.2 + s.high * 1.0);
+  const tf = 0.65 + s.tempo; // pace factor (~1.0 at the calm default; faster music spins quicker)
+  const rotf = tf * ringSpeed; // ring rotation also scaled by the user's ring-speed toggle
+  s.outer += dt * (0.14 + s.bass * 0.7) * rotf;
+  s.inner -= dt * (0.2 + s.high * 1.0) * rotf;
   for (const rp of s.ripples) {
-    rp.r += dt * (90 + s.loud * 100); // gentler expansion
+    rp.r += dt * (90 + s.loud * 100) * tf; // ripples follow the music's pace (not the ring-speed)
     rp.a -= dt * 0.5; // slower fade
   }
   s.ripples = s.ripples.filter((rp) => rp.a > 0);
@@ -79,16 +83,21 @@ export function drawSeal(
   if (!w || !h) return;
   ctx.clearRect(0, 0, w, h);
   const cx = w / 2, cy = h / 2;
-  const R = (Math.min(w, h) / 2 - 8) * (0.88 + s.loud * 0.18 + s.bass * 0.06); // loudness/bass → size
+  // The canvas is larger than the seal so ripples have room; keep the rings their
+  // original on-screen size by shrinking the radius fraction to match (0.88 → 0.57).
+  const R = (Math.min(w, h) / 2 - 8) * (0.57 + s.loud * 0.18 + s.bass * 0.06); // loudness/bass → size
   const teal = pal.teal, gold = pal.gold;
   ctx.save();
   ctx.translate(cx, cy);
 
-  // resonance ripples (a beat sends ink dispersing outward)
+  // resonance ripples (a beat sends ink dispersing outward). They fade to nothing as
+  // they near the enlarged canvas edge, so they dissolve cleanly instead of clipping.
+  const rmax = Math.min(w, h) / 2 - 4;
   for (const rp of s.ripples) {
+    const edge = Math.max(0, 1 - rp.r / rmax);
     ctx.beginPath();
     ctx.strokeStyle = teal;
-    ctx.globalAlpha = rp.a * 0.5;
+    ctx.globalAlpha = rp.a * 0.5 * edge;
     ctx.lineWidth = 1.4 + rp.a * 1.4;
     ctx.shadowColor = teal;
     ctx.shadowBlur = 10 * rp.a;
@@ -100,7 +109,7 @@ export function drawSeal(
   // `frac` is the radius as a fraction of R; the dash count is derived from the
   // STABLE (un-breathing) radius so the pattern tiles the circle EXACTLY (no seam,
   // no "not-quite-a-circle" discontinuity) and never pops when the seal breathes.
-  const baseR = (Math.min(w, h) / 2 - 8) * 0.88; // R at loud=bass=0
+  const baseR = (Math.min(w, h) / 2 - 8) * 0.57; // R at loud=bass=0 (matches the radius above)
   const DASH_PERIOD = 14; // nominal px between dashes → ~clean long-dash look
   const rings = [
     { frac: 0.98, rot: s.outer, band: s.mid, wd: 2.0 },

@@ -144,6 +144,7 @@ fn run_capture(app: &AppHandle) -> Result<(), String> {
     let mut loud_peak = 1e-4f32;
     let mut flux_mean = 0f32;
     let mut last_beat = Instant::now();
+    let mut tempo = 0.35f32; // smoothed pace 0..1 (slow..fast); carried in bands[3]
     let mut last_emit = Instant::now();
 
     while CAPTURING.load(Ordering::Relaxed) {
@@ -237,13 +238,25 @@ fn run_capture(app: &AppHandle) -> Result<(), String> {
             && flux > 1e-3
             && last_beat.elapsed().as_millis() > 220;
         if beat {
+            // inter-beat interval → an instantaneous pace, eased into `tempo`.
+            let interval = last_beat.elapsed().as_millis() as f32;
             last_beat = Instant::now();
+            let bpm = (60_000.0 / interval.max(150.0)).clamp(50.0, 200.0);
+            let pace = ((bpm - 70.0) / 90.0).clamp(0.0, 1.0);
+            tempo = tempo * 0.82 + pace * 0.18;
         }
 
         if gated {
             bands = [0.0; 8];
             loudness = 0.0;
         }
+
+        // Tempo eases toward calm when beats are sparse/silent; carried in the spare
+        // bands[3] slot so the seal's rotation can follow the music's pace (14.2).
+        if gated || last_beat.elapsed().as_millis() > 1600 {
+            tempo += (0.25 - tempo) * 0.03;
+        }
+        bands[3] = tempo;
 
         if !logged_first {
             logged_first = true;

@@ -15,7 +15,7 @@ import {
   getTintOpacityForMode,
 } from "./atelier/palette";
 import type { Bands } from "./atelier/audio/generative";
-import { currentBands, onBandFrame, setAttuned, takeBeat, type BandFrameMsg } from "./atelier/audio/source";
+import { currentBands, currentTempo, onBandFrame, setAttuned, takeBeat, type BandFrameMsg } from "./atelier/audio/source";
 import { makeMotes, drawAmbient, makeLanterns, drawLanterns, type Mote } from "./atelier/draw/ambient";
 import { attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
@@ -155,10 +155,10 @@ function drawAmbientFrame(ts: number, b: Bands) {
 }
 
 const sealState = makeSealState();
-function drawVizFrame(ts: number, b: Bands, dt: number, beat: boolean) {
+function drawVizFrame(ts: number, b: Bands, dt: number, beat: boolean, tempo: number) {
   const c = viz as CV;
   const ctx = c.getContext("2d")!;
-  stepSeal(sealState, b, dt, beat);
+  stepSeal(sealState, b, dt, beat, tempo, ringSpeed);
   drawSeal(ctx, c._cssw!, c._cssh!, sealState, pal, attuned(ts, SIGILS));
 }
 
@@ -725,6 +725,7 @@ let loopGen = 0; // bumped on framerate/loop change so the old loop self-cancels
 let loopRunning = false;
 let quietActive = false; // quiet-hours "embers" dim active
 let quietLevel = 0; // eased 0..1; gentles the seal/motes/glow reactivity at night
+let ringSpeed = 0.5; // seal ring rotation multiplier (1 / 0.5 / 0.25; settings:ringspeed) — half-speed default
 // Drive the ambient loop with setTimeout, NOT requestAnimationFrame. An active rAF
 // loop keeps Chromium's compositor in continuous "animating" mode, so it PRESENTS
 // every vsync (e.g. 175 Hz) even though we only redraw at 30 Hz — confirmed via
@@ -740,7 +741,7 @@ function drawFrame(ts: number) {
   const qf = 1 - quietLevel * 0.55; // quiet hours gentle the reactivity
   const b = quietLevel > 0.01 ? { bass: raw.bass * qf, mid: raw.mid * qf, high: raw.high * qf } : raw;
   drawAmbientFrame(ts, b);
-  drawVizFrame(ts, b, dt, takeBeat()); // advances sealState (smoothed bands)
+  drawVizFrame(ts, b, dt, takeBeat(), currentTempo()); // advances sealState (smoothed bands + pace)
   // Rotate the decorative clock/seal rings here (was infinite CSS animation). On
   // secondary monitors the clock/seal are hidden, so these writes cause no damage.
   if (ring1) ring1.style.transform = `rotate(${(ts / 333.333) % 360}deg)`; // 120s cw
@@ -852,10 +853,11 @@ function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; checkQuiet(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
+listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
 listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; updateLoopState(); });
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 // A new cast/secret updates the inscribed count.

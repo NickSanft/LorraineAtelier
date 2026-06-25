@@ -14,6 +14,7 @@ const interactBtn = document.getElementById("interact") as HTMLButtonElement;
 const colorblindBtn = document.getElementById("colorblind") as HTMLButtonElement;
 const startupBtn = document.getElementById("startup") as HTMLButtonElement;
 const frameRateSel = document.getElementById("frameRate") as HTMLSelectElement;
+const ringSpeedSel = document.getElementById("ringSpeed") as HTMLSelectElement;
 const primaryOnlyBtn = document.getElementById("primaryOnly") as HTMLButtonElement;
 const buddyEnabledBtn = document.getElementById("buddyEnabled") as HTMLButtonElement;
 const quietToggleBtn = document.getElementById("quietToggle") as HTMLButtonElement;
@@ -92,6 +93,7 @@ interface SettingsDto {
   colorblind: boolean;
   runAtStartup: boolean;
   frameRate: number;
+  ringSpeed: number;
   primaryOnly: boolean;
   buddyEnabled: boolean;
   quietHoursEnabled: boolean;
@@ -204,6 +206,7 @@ async function main() {
     if (s.quietStart) quietStartInput.value = s.quietStart;
     if (s.quietEnd) quietEndInput.value = s.quietEnd;
     frameRateSel.value = String(s.frameRate ?? 30);
+    ringSpeedSel.value = String(s.ringSpeed ?? 0.5);
     buildBindings(s.mappings || {});
     buildTomes(s);
     if (s.firstRun) {
@@ -253,6 +256,11 @@ async function main() {
     const fps = parseInt(frameRateSel.value, 10) || 0;
     await invoke("set_frame_rate", { fps });
     append(`framerate → ${frameRateSel.options[frameRateSel.selectedIndex].text}`);
+  });
+  ringSpeedSel.addEventListener("change", async () => {
+    const speed = parseFloat(ringSpeedSel.value) || 1;
+    await invoke("set_ring_speed", { speed });
+    append(`ring speed → ${ringSpeedSel.options[ringSpeedSel.selectedIndex].text}`);
   });
   primaryOnlyBtn.addEventListener("click", async () => {
     primaryOnlyOn = !primaryOnlyOn;

@@ -93,6 +93,7 @@ pub struct Settings {
     pub quiet_hours_enabled: bool, // dim the scene to "embers" during the quiet window
     pub quiet_start: String,       // "HH:MM" local — quiet window start
     pub quiet_end: String,         // "HH:MM" local — quiet window end (may wrap past midnight)
+    pub ring_speed: f32,           // visualizer seal rotation speed (1.0 original, 0.5 half, 0.25 quarter)
 }
 
 impl Default for Settings {
@@ -123,6 +124,7 @@ impl Default for Settings {
             quiet_hours_enabled: true, // gift default: the atelier rests at night
             quiet_start: "22:00".into(),
             quiet_end: "07:00".into(),
+            ring_speed: 0.5, // gift default: the gentler half-speed turn reads as calmer/dreamier
         }
     }
 }
@@ -270,6 +272,11 @@ pub fn set_quiet_hours(enabled: bool, start: String, end: String) {
         s.quiet_start = start;
         s.quiet_end = end;
     }
+    save();
+}
+
+pub fn set_ring_speed(v: f32) {
+    store().lock().unwrap().ring_speed = v;
     save();
 }
 

@@ -1496,6 +1496,16 @@ fn preview_lanterns(app: AppHandle) -> String {
     "previewing lanterns".into()
 }
 
+/// Set the visualizer seal's ring-rotation speed (1.0 original / 0.5 half / 0.25
+/// quarter) and broadcast it so the wallpaper applies it live.
+#[tauri::command]
+fn set_ring_speed(app: AppHandle, speed: f32) -> String {
+    let s = speed.clamp(0.1, 1.0);
+    settings::set_ring_speed(s);
+    let _ = app.emit("settings:ringspeed", s);
+    format!("ring speed -> {s}")
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -1664,6 +1674,7 @@ pub fn run() {
             set_quiet_hours,
             preview_quiet,
             preview_lanterns,
+            set_ring_speed,
             set_viz_source,
             viz_status,
             casting::classify_sigil,

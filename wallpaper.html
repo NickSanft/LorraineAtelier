@@ -83,7 +83,11 @@
         <svg id="ring3" viewBox="0 0 300 300" style="position:absolute;inset:-10px;width:calc(100% + 20px);height:calc(100% + 20px);color:var(--c-teal);opacity:.4;will-change:transform">
           <circle cx="150" cy="150" r="146" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="1 9" />
         </svg>
-        <canvas id="viz" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
+        <!-- The canvas extends 80px beyond the seal box (centred) so the resonance ripples
+             have room to expand and fade out cleanly instead of clipping at the widget edge.
+             A <canvas> is a replaced element, so it needs explicit width/height (inset alone
+             leaves it at its intrinsic size). -->
+        <canvas id="viz" style="position:absolute;top:-80px;left:-80px;width:calc(100% + 160px);height:calc(100% + 160px);pointer-events:none"></canvas>
         <div style="position:absolute;left:0;right:0;bottom:-34px;display:flex;align-items:center;justify-content:center;gap:12px;pointer-events:none">
           <div id="attunePill" style="display:flex;align-items:center;gap:9px;border:1px solid var(--c-edge);background:var(--c-panel);backdrop-filter:blur(7px);border-radius:999px;padding:7px 16px 7px 11px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--c-text)">
             <span id="attuneIcon" style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;color:var(--c-gold);font-size:11px">▶</span>

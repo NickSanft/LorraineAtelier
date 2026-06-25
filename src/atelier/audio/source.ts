@@ -38,3 +38,10 @@ export function currentBands(t: number): Bands {
 
 /** Consume a pending real-audio beat (onset) for this frame. */
 export function takeBeat(): boolean { const b = pendingBeat; pendingBeat = false; return b; }
+
+/** Pace 0..1 carried in the spare bands[3] slot (14.2): the seal's rotation/ripple
+ * cadence follows it when attuned. Generative stays at the calm default (~unchanged
+ * look). */
+export function currentTempo(): number {
+  return attuned ? (frame[3] || 0.35) : 0.35;
+}
