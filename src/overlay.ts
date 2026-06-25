@@ -45,6 +45,7 @@ const slate = document.getElementById("slate") as HTMLElement;
 const scrim = document.getElementById("scrim") as HTMLElement;
 const storybook = document.getElementById("storybook") as HTMLElement;
 const sbBook = document.getElementById("sbBook")!;
+const sbCoverEl = document.getElementById("sbCover")!;
 const sbDots = document.getElementById("sbDots")!;
 const sbTurn = document.getElementById("sbTurn") as HTMLButtonElement;
 
@@ -538,6 +539,25 @@ async function openStorybook() {
   storybook.style.display = "block";
   storybookOpen = true;
   const reduced = prefersReduced();
+  // The leather cover swings open over the book on reveal (its own CSS 3D; vanishes
+  // past 90° via backface-visibility), then is removed. Skipped under reduced-motion.
+  if (reduced) {
+    sbCoverEl.style.display = "none";
+    sbBook.style.opacity = "1";
+  } else {
+    sbBook.style.transition = "none";
+    sbBook.style.opacity = "0"; // hide the open spread behind the closed, centred cover
+    sbCoverEl.style.display = "flex";
+    sbCoverEl.style.transition = "none";
+    sbCoverEl.style.transform = "rotateY(0deg)";
+    window.setTimeout(() => {
+      sbCoverEl.style.transition = "transform .95s cubic-bezier(.3,.7,.25,1)";
+      sbCoverEl.style.transform = "rotateY(-170deg)";
+      sbBook.style.transition = "opacity .55s ease .15s"; // reveal the spread as the cover lifts
+      sbBook.style.opacity = "1";
+    }, 460);
+    window.setTimeout(() => { sbCoverEl.style.display = "none"; }, 1500);
+  }
   if (pageFlip) { try { pageFlip.destroy(); } catch { /* */ } pageFlip = null; }
   sbBook.innerHTML = "";
   const pages = gift ? buildBookPages(gift) : [];
