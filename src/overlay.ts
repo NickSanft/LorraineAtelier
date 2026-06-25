@@ -43,9 +43,9 @@ const toastMsg = document.getElementById("toastMsg")!;
 const slate = document.getElementById("slate") as HTMLElement;
 const scrim = document.getElementById("scrim") as HTMLElement;
 const storybook = document.getElementById("storybook") as HTMLElement;
-const sbHeading = document.getElementById("sbHeading")!;
-const sbBody = document.getElementById("sbBody")!;
-const sbSig = document.getElementById("sbSig")!;
+const sbPage = document.getElementById("sbPage")!;
+const sbDots = document.getElementById("sbDots")!;
+const sbTurn = document.getElementById("sbTurn") as HTMLButtonElement;
 
 interface GiftDto { recipientName: string; heading: string; paragraphs: string[]; signature: string; birthday: string }
 
@@ -461,20 +461,88 @@ function showToast(msg: string, icon: string) {
   toastTimer = window.setTimeout(() => { toast.style.display = "none"; }, 4200);
 }
 
+// The dedication is a small hand-bound spellbook (14.1): the heading + paragraphs +
+// signature are paginated; turning a page cross-fades/slides the next in, and the
+// final page bears the inked pentacle. Snappy + reduced-motion-safe (instant swap).
+const prefersReduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+let sbPages: HTMLElement[] = [];
+let sbCur = 0;
+
+function buildPages(gift: GiftDto): HTMLElement[] {
+  const heading = gift.recipientName ? `For ${gift.recipientName}` : gift.heading;
+  const paras = gift.paragraphs.length ? gift.paragraphs : [""];
+  return paras.map((p, i) => {
+    const page = document.createElement("div");
+    if (i === 0) {
+      const h = document.createElement("div");
+      h.textContent = heading;
+      h.style.cssText = "font-family:'Cinzel',serif;font-size:23px;letter-spacing:.1em;text-align:center;color:#7a5a2a;margin-bottom:4px";
+      page.appendChild(h);
+      const o = document.createElement("div");
+      o.textContent = "✦";
+      o.style.cssText = "text-align:center;color:#9c6f2a;font-size:15px;margin-bottom:20px";
+      page.appendChild(o);
+    }
+    const para = document.createElement("p");
+    para.textContent = p;
+    para.style.cssText = "font-size:16.5px;line-height:1.74;margin:0 0 14px";
+    page.appendChild(para);
+    if (i === paras.length - 1) {
+      const sig = document.createElement("div");
+      sig.textContent = gift.signature;
+      sig.style.cssText = "text-align:right;font-style:italic;margin-top:22px;color:#5a4628";
+      page.appendChild(sig);
+      const seal = document.createElement("div");
+      seal.textContent = "✦";
+      seal.style.cssText = "text-align:center;color:#9c6f2a;font-size:30px;margin-top:16px;opacity:.85";
+      page.appendChild(seal);
+    }
+    return page;
+  });
+}
+
+function updateSbNav() {
+  sbDots.innerHTML = "";
+  for (let i = 0; i < sbPages.length; i++) {
+    const d = document.createElement("span");
+    d.style.cssText = `width:7px;height:7px;border-radius:50%;background:${i === sbCur ? "#9c6f2a" : "rgba(120,90,58,.3)"}`;
+    sbDots.appendChild(d);
+  }
+  sbTurn.textContent = sbCur >= sbPages.length - 1 ? "Close the book ✦" : "Turn the page ▸";
+}
+
+function showPage(i: number, dir: number) {
+  sbCur = Math.max(0, Math.min(sbPages.length - 1, i));
+  sbPage.innerHTML = "";
+  if (sbPages[sbCur]) sbPage.appendChild(sbPages[sbCur]);
+  updateSbNav();
+  if (prefersReduced()) { sbPage.style.transition = "none"; sbPage.style.opacity = "1"; sbPage.style.transform = "none"; return; }
+  sbPage.style.transition = "none";
+  sbPage.style.opacity = "0";
+  sbPage.style.transform = `translateX(${dir * 20}px)`;
+  requestAnimationFrame(() => {
+    sbPage.style.transition = "opacity .3s ease, transform .3s ease";
+    sbPage.style.opacity = "1";
+    sbPage.style.transform = "translateX(0)";
+  });
+}
+
+function turnPage() {
+  if (sbCur >= sbPages.length - 1) { reset(); hide(); } // last page → close the book
+  else showPage(sbCur + 1, 1);
+}
+
 async function openStorybook() {
   let gift: GiftDto | null = null;
   try { gift = (await invoke<{ gift: GiftDto }>("get_settings")).gift; } catch { /* */ }
-  if (gift) {
-    sbHeading.textContent = gift.recipientName ? `For ${gift.recipientName}` : gift.heading;
-    sbBody.innerHTML = "";
-    for (const p of gift.paragraphs) {
-      const el = document.createElement("p");
-      el.style.margin = "0 0 14px";
-      el.textContent = p;
-      sbBody.appendChild(el);
-    }
-    sbSig.textContent = gift.signature;
-  }
+  sbPages = gift ? buildPages(gift) : [];
+  sbCur = 0;
+  sbPage.innerHTML = "";
+  if (sbPages[0]) sbPage.appendChild(sbPages[0]);
+  sbPage.style.transition = "none";
+  sbPage.style.opacity = "1";
+  sbPage.style.transform = "none";
+  updateSbNav();
   scrim.style.display = "block";
   slate.style.display = "none";
   storybook.style.display = "block";
@@ -503,7 +571,8 @@ async function hide() {
 
 document.getElementById("btnClear")!.addEventListener("click", reset);
 document.getElementById("btnDismiss")!.addEventListener("click", () => { reset(); hide(); });
-document.getElementById("sbClose")!.addEventListener("click", () => { reset(); hide(); });
+sbTurn.addEventListener("click", turnPage); // turn the page, or close the book on the last
+sbPage.addEventListener("click", () => { if (sbCur < sbPages.length - 1) showPage(sbCur + 1, 1); }); // tap the page to turn forward
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") { reset(); hide(); } });
 
 // Rust drives the overlay mode (it shows the window for casting, hides it after).
