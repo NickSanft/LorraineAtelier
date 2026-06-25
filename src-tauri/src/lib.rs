@@ -1407,15 +1407,18 @@ fn toggle_mode(app: AppHandle) -> String {
 
 /// Set the launch target for an element key (Spell Bindings panel). Persisted.
 #[tauri::command]
-fn set_mapping(key: String, target: String) -> String {
+fn set_mapping(app: AppHandle, key: String, target: String) -> String {
     settings::set_mapping(key.clone(), target.clone());
+    // The dock element-pill labels mirror the live bindings → tell the wallpaper.
+    let _ = app.emit("settings:bindings", settings::get().mappings);
     format!("{key} -> {target}")
 }
 
 /// Restore the default sigil→app bindings.
 #[tauri::command]
-fn reset_mappings() -> String {
+fn reset_mappings(app: AppHandle) -> String {
     settings::reset_mappings();
+    let _ = app.emit("settings:bindings", settings::get().mappings);
     "mappings reset".into()
 }
 

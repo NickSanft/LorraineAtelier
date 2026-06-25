@@ -174,8 +174,8 @@ function updateDockDisplay(mode: Mode, inkPercent?: number) {
   if (modeIndicator) {
     const isNight = mode === "night";
     modeIndicator.innerHTML =
-      `<span style="font-size:calc(19px * var(--ui-scale,1));line-height:1;color:var(--c-gold)">${isNight ? "☾" : "☀"}</span>` +
-      `<span style="font-family:'Cinzel',serif;font-size:calc(8px * var(--ui-scale,1));letter-spacing:.12em;text-transform:uppercase;color:var(--c-soft)">${isNight ? "Night" : "Day"}</span>`;
+      `<span class="dglyph" style="color:var(--c-gold)">${isNight ? "☾" : "☀"}</span>` +
+      `<span class="dlab">${isNight ? "Night" : "Day"}</span>`;
     scheduleHitRects(); // the mode indicator width changed → dock layout shifted
     scheduleSizes();
   }
@@ -183,6 +183,64 @@ function updateDockDisplay(mode: Mode, inkPercent?: number) {
     inkLevelBar.style.height = Math.max(0, Math.min(100, inkPercent)) + "%";
   }
 }
+
+// ---- dock element-pill labels reflect the LIVE spell-bindings ----
+// Each pill's label is derived from what that element actually launches (its bound
+// target), so a remap shows up instead of the old hardcoded "Steam/Discord/…". The
+// target is a URL / protocol / path; we surface a short, friendly name.
+function labelForTarget(target?: string): string {
+  const s = (target || "").trim();
+  if (!s || s.toLowerCase() === "files") return "Files";
+  const m = /^([a-z][a-z0-9+.-]*):/i.exec(s);
+  const scheme = m ? m[1].toLowerCase() : "";
+  let label: string;
+  if (scheme === "http" || scheme === "https") {
+    let host = s;
+    try { host = new URL(s).hostname; } catch { host = s.replace(/^https?:\/\//i, ""); }
+    label = host.replace(/^www\./i, "").split(".")[0] || "Web";
+  } else if (scheme && scheme !== "file") {
+    label = scheme; // steam, discord, spotify, mailto, …
+  } else {
+    const base = s.split(/[\\/]/).pop() || s; // a path → the app/file basename
+    label = base.replace(/\.[^.]+$/, "");
+  }
+  label = label.charAt(0).toUpperCase() + label.slice(1);
+  return label.length > 11 ? label.slice(0, 10) + "…" : label;
+}
+function applyBindingLabels(mappings?: Record<string, string>) {
+  if (!mappings) return;
+  let changed = false;
+  for (const key of ["fire", "water", "wind", "earth"]) {
+    const el = document.getElementById("dockLab-" + key);
+    if (!el) continue;
+    const label = labelForTarget(mappings[key]);
+    if (el.textContent !== label) { el.textContent = label; changed = true; }
+  }
+  if (changed) scheduleHitRects(); // label widths may have shifted the dock layout
+}
+listen<Record<string, string>>("settings:bindings", (e) => applyBindingLabels(e.payload));
+
+// ---- tap feedback ----
+// The dock can't receive DOM events, so the Rust hook emits `dock:tap` when a click
+// lands on a control; flash that cell (a quick press + glow) so the tap is acknowledged.
+function flashTap(kind: string, key?: string) {
+  if (isPrimary === false) return; // only the primary monitor shows the dock
+  let el: Element | null = null;
+  if (kind === "pill" && key) el = document.querySelector(`[data-pill="${key}"]`);
+  else if (kind === "cast") el = document.getElementById("castGlyph");
+  else if (kind === "mode") el = document.getElementById("modeIndicator");
+  else if (kind === "tomes") el = document.getElementById("tomesBtn");
+  else if (kind === "attune") el = document.getElementById("attunePill");
+  if (!el) return;
+  el.classList.remove("dtap");
+  void (el as HTMLElement).offsetWidth; // reflow so a rapid re-tap restarts the animation
+  el.classList.add("dtap");
+}
+listen<string>("dock:tap", (e) => {
+  const p = e.payload || "";
+  if (p.startsWith("pill:")) flashTap("pill", p.slice(5));
+  else if (p) flashTap(p);
+});
 
 // ---- desktop-layer interactivity: publish hit-rects to Rust ----
 // The dock has pointer-events:none and the wallpaper sits below the icons, so the
@@ -891,8 +949,8 @@ function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });

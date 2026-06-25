@@ -370,6 +370,21 @@ Three more research-backed enhancements the user selected from the runner-up bac
 
 ---
 
+### Phase 15 — Polish & hardening (planned 2026-06-25; from an audit + dock-UX research pass)
+Chosen from a prioritized audit: a dock redesign the user asked for, plus three hardening bundles (data safety, idle efficiency, defensive edge cases). Reduced-motion/contrast was offered but deferred. No recognizer/casting changes.
+
+**15.1 — Witch's-belt dock redesign + tap feedback. ✅ DONE (2026-06-25).** Collapsed the three separate glass panels into **one frosted pill** (radius `999px`, matching the top-strip/attune pill language the old `16px` clashed with) split into three zones by the existing hairline divider: [ink pip + four element vials] | Inscribe | [Tomes + Day/Night]. Uniform `.dcell`/`.dglyph`/`.dlab` cells on a 4px rhythm; the ink flask demoted to a small pip so it no longer sets the bar height; **Inscribe is the only lit element** (gold fill + one bloom) while the merged bar casts a single shadow. IDs + `data-pill` preserved so the Rust hit-test + `updateDockDisplay` are unchanged; vertical-dock seams flip to horizontal rules. **Dynamic labels** — pills now derive their text from the live spell-bindings (`labelForTarget` in `wallpaper.ts`, seeded from `get_settings.mappings` + a new `settings:bindings` emit on `set_mapping`/`reset_mappings`), fixing the stale hardcoded "Steam/Discord/Browser/Files" (e.g. Wind now reads its real target). **Tap feedback** — the hook emits `dock:tap` on every matched click (`cast`/`pill:KEY`/`mode`/`attune`/`tomes`) and the wallpaper flashes that cell (a `.dtap` press + brightness flare), the first visible acknowledgement a display-only dock could give. Files: `wallpaper.html`, `src/wallpaper.ts`, `src-tauri/src/hook.rs`, `src-tauri/src/lib.rs`. **Effort: M.**
+
+**15.2 — Data safety.** Atomic `settings.json` writes (temp-file + rename so a crash mid-save can't corrupt it and wipe the named fudemushi / discovered tomes / custom config) + poison-safe mutex locks (`lock().unwrap_or_else(|e| e.into_inner())`) on the hot paths so one panic can't freeze the buddy/wallpaper. Files: `settings.rs`, `lib.rs`. **Effort: S–M. (pending)**
+
+**15.3 — Idle efficiency.** Skip ring-transform DOM writes when the rotation string is unchanged / on static secondaries; cache the buddy `inset` fields and stop re-serializing them at 30 Hz when unchanged. Lower all-day CPU/IPC. Files: `wallpaper.ts`, `lib.rs`. **Effort: S. (pending)**
+
+**15.4 — Defensive edge cases.** Re-anchor the overlay if its monitor is unplugged mid-cast; timeouts on critical `invoke` calls; consistent fractional-DPI rounding in the inset/hit-rect math; a sequence guard on `set_widget_layout`; canvas 0×0 guards. Files: `lib.rs`, `wallpaper.ts`. **Effort: M. (pending)**
+
+**Exit criteria:** the dock reads as one clean instrument with live labels + tap feedback; a crash can't corrupt settings or freeze the wallpaper; idle cost is trimmed; the known multi-monitor/DPI edge cases are handled. Re-cut the installer after.
+
+---
+
 ## 3. Consolidated Risk Register
 
 | # | Risk | Severity | Mitigation |

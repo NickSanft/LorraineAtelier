@@ -171,23 +171,28 @@ fn ensure_consumer(app: &AppHandle) {
         while let Ok(msg) = rx.recv() {
             match msg {
                 HookMsg::Action(HitTarget::Cast) => {
+                    let _ = app.emit("dock:tap", "cast"); // flash the tapped cell
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || crate::hook_cast(&app2));
                     let _ = app.emit("log", "hook: cast glyph → open casting");
                 }
                 HookMsg::Action(HitTarget::Pill(key)) => {
+                    let _ = app.emit("dock:tap", format!("pill:{key}"));
                     let _ = crate::casting::test_launch(key.clone());
                     let _ = app.emit("log", format!("hook: pill → {key}"));
                 }
                 HookMsg::Action(HitTarget::Mode) => {
+                    let _ = app.emit("dock:tap", "mode");
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || crate::hook_toggle_mode(&app2));
                 }
                 HookMsg::Action(HitTarget::Attune) => {
+                    let _ = app.emit("dock:tap", "attune");
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || crate::hook_toggle_attune(&app2));
                 }
                 HookMsg::Action(HitTarget::Tomes) => {
+                    let _ = app.emit("dock:tap", "tomes");
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || crate::hook_open_tomes(&app2));
                 }
