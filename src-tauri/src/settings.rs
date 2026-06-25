@@ -161,52 +161,70 @@ fn file_path() -> Option<PathBuf> {
 pub fn load() {
     let Some(p) = file_path() else { return };
     let Ok(txt) = std::fs::read_to_string(&p) else { return };
-    if let Ok(mut s) = serde_json::from_str::<Settings>(&txt) {
-        for (k, v) in default_mappings() {
-            s.mappings.entry(k).or_insert(v);
+    match serde_json::from_str::<Settings>(&txt) {
+        Ok(mut s) => {
+            for (k, v) in default_mappings() {
+                s.mappings.entry(k).or_insert(v);
+            }
+            *store().lock().unwrap_or_else(|e| e.into_inner()) = s;
         }
-        *store().lock().unwrap() = s;
+        Err(_) => {
+            // Corrupt or incompatible file: preserve it (so it can be recovered) instead of
+            // letting the first save() silently overwrite it with defaults.
+            let _ = std::fs::rename(&p, p.with_extension("corrupt.json"));
+        }
     }
 }
 
 pub fn get() -> Settings {
-    store().lock().unwrap().clone()
+    store().lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 pub fn mapping_for(key: &str) -> Option<String> {
-    store().lock().unwrap().mappings.get(key).cloned()
+    store().lock().unwrap_or_else(|e| e.into_inner()).mappings.get(key).cloned()
 }
 
 fn save() {
-    let s = store().lock().unwrap().clone();
+    let s = store().lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some(p) = file_path() else { return };
     if let Some(dir) = p.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     if let Ok(txt) = serde_json::to_string_pretty(&s) {
-        let _ = std::fs::write(&p, txt);
+        // Atomic write: serialize to a temp sibling, then rename it over the live file.
+        // A crash mid-write can then never leave settings.json half-written (which would
+        // fail to parse on next load and silently reset to defaults — losing the named
+        // fudemushi, discovered tomes, widget layout, etc.). std::fs::rename replaces the
+        // destination on Windows, and same-dir rename is atomic on the same volume.
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, &txt).is_ok() {
+            if std::fs::rename(&tmp, &p).is_err() {
+                let _ = std::fs::write(&p, &txt); // rename failed (rare) → best-effort direct write
+                let _ = std::fs::remove_file(&tmp);
+            }
+        }
     }
 }
 
 pub fn set_mode(app: &AppHandle, mode: String) {
-    store().lock().unwrap().mode = mode.clone();
+    store().lock().unwrap_or_else(|e| e.into_inner()).mode = mode.clone();
     save();
     let _ = app.emit("settings:mode", mode); // wallpaper windows transition to it
 }
 
 pub fn set_pause(enabled: bool) {
-    store().lock().unwrap().pause_on_fullscreen = enabled;
+    store().lock().unwrap_or_else(|e| e.into_inner()).pause_on_fullscreen = enabled;
     save();
 }
 
 pub fn set_desktop_interactive(enabled: bool) {
-    store().lock().unwrap().desktop_interactive = enabled;
+    store().lock().unwrap_or_else(|e| e.into_inner()).desktop_interactive = enabled;
     save();
 }
 
 pub fn set_buddy_pos(x: f64, y: f64) {
     {
-        let mut s = store().lock().unwrap();
+        let mut s = store().lock().unwrap_or_else(|e| e.into_inner());
         s.buddy_x = x;
         s.buddy_y = y;
         s.buddy_placed = true;
@@ -215,73 +233,73 @@ pub fn set_buddy_pos(x: f64, y: f64) {
 }
 
 pub fn set_mapping(key: String, target: String) {
-    store().lock().unwrap().mappings.insert(key, target);
+    store().lock().unwrap_or_else(|e| e.into_inner()).mappings.insert(key, target);
     save();
 }
 
 pub fn reset_mappings() {
-    store().lock().unwrap().mappings = default_mappings();
+    store().lock().unwrap_or_else(|e| e.into_inner()).mappings = default_mappings();
     save();
 }
 
 pub fn set_secret_found(found: bool) {
-    store().lock().unwrap().secret_found = found;
+    store().lock().unwrap_or_else(|e| e.into_inner()).secret_found = found;
     save();
 }
 
 pub fn set_first_run(v: bool) {
-    store().lock().unwrap().first_run = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).first_run = v;
     save();
 }
 
 pub fn set_colorblind(v: bool) {
-    store().lock().unwrap().colorblind = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).colorblind = v;
     save();
 }
 
 pub fn set_buddy_sprite(src: String) {
-    store().lock().unwrap().buddy_sprite = src;
+    store().lock().unwrap_or_else(|e| e.into_inner()).buddy_sprite = src;
     save();
 }
 
 pub fn set_run_at_startup(v: bool) {
-    store().lock().unwrap().run_at_startup = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).run_at_startup = v;
     save();
 }
 
 pub fn set_frame_rate(v: u32) {
-    store().lock().unwrap().frame_rate = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).frame_rate = v;
     save();
 }
 
 pub fn set_primary_only(v: bool) {
-    store().lock().unwrap().primary_only = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).primary_only = v;
     save();
 }
 
 pub fn set_buddy_enabled(v: bool) {
-    store().lock().unwrap().buddy_enabled = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).buddy_enabled = v;
     save();
 }
 
 pub fn set_buddy_revealed(v: bool) {
-    store().lock().unwrap().buddy_revealed = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).buddy_revealed = v;
     save();
 }
 
 pub fn set_buddy_name(name: String) {
-    store().lock().unwrap().buddy_name = name;
+    store().lock().unwrap_or_else(|e| e.into_inner()).buddy_name = name;
     save();
 }
 
 pub fn set_cast_hint_shown(v: u32) {
-    store().lock().unwrap().cast_hint_shown = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).cast_hint_shown = v;
     save();
 }
 
 pub fn set_quiet_hours(enabled: bool, start: String, end: String) {
     {
-        let mut s = store().lock().unwrap();
+        let mut s = store().lock().unwrap_or_else(|e| e.into_inner());
         s.quiet_hours_enabled = enabled;
         s.quiet_start = start;
         s.quiet_end = end;
@@ -290,17 +308,17 @@ pub fn set_quiet_hours(enabled: bool, start: String, end: String) {
 }
 
 pub fn set_ring_speed(v: f32) {
-    store().lock().unwrap().ring_speed = v;
+    store().lock().unwrap_or_else(|e| e.into_inner()).ring_speed = v;
     save();
 }
 
 pub fn set_widget_layout(name: String, x: f64, y: f64, scale: f64, vertical: bool) {
-    store().lock().unwrap().widget_layout.insert(name, WidgetPos { x, y, scale, vertical });
+    store().lock().unwrap_or_else(|e| e.into_inner()).widget_layout.insert(name, WidgetPos { x, y, scale, vertical });
     save();
 }
 
 pub fn clear_widget_layout(name: &str) {
-    store().lock().unwrap().widget_layout.remove(name);
+    store().lock().unwrap_or_else(|e| e.into_inner()).widget_layout.remove(name);
     save();
 }
 
@@ -309,7 +327,7 @@ pub fn clear_widget_layout(name: &str) {
 /// before) — the signal the fudemushi uses to hatch.
 pub fn record_discovery(key: &str) -> bool {
     let first_ever = {
-        let mut s = store().lock().unwrap();
+        let mut s = store().lock().unwrap_or_else(|e| e.into_inner());
         let was_empty = s.discovered.is_empty();
         *s.discovered.entry(key.to_string()).or_insert(0) += 1;
         was_empty
@@ -319,16 +337,16 @@ pub fn record_discovery(key: &str) -> bool {
 }
 
 pub fn set_last_birthday_year(year: i32) {
-    store().lock().unwrap().last_birthday_year = year;
+    store().lock().unwrap_or_else(|e| e.into_inner()).last_birthday_year = year;
     save();
 }
 
 pub fn set_last_silvereve_year(year: i32) {
-    store().lock().unwrap().last_silvereve_year = year;
+    store().lock().unwrap_or_else(|e| e.into_inner()).last_silvereve_year = year;
     save();
 }
 
 pub fn set_last_silvereve_day(day: String) {
-    store().lock().unwrap().last_silvereve_day = day;
+    store().lock().unwrap_or_else(|e| e.into_inner()).last_silvereve_day = day;
     save();
 }

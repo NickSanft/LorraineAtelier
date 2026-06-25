@@ -87,7 +87,7 @@ pub fn set_global_rects(v: Vec<(i32, i32, i32, i32, HitTarget)>) {
         .into_iter()
         .map(|(x0, y0, x1, y1, target)| GlobalRect { x0, y0, x1, y1, target })
         .collect();
-    *rects().lock().unwrap() = mapped;
+    *rects().lock().unwrap_or_else(|e| e.into_inner()) = mapped;
 }
 
 /// Push a message to the consumer (the Mutex is only ever locked by the hook
@@ -102,7 +102,7 @@ fn send(msg: HookMsg) {
 
 /// Cheap point-in-rect test (pure math) — safe to run on the hot path.
 fn hit_test(x: i32, y: i32) -> Option<HitTarget> {
-    let g = rects().lock().unwrap();
+    let g = rects().lock().unwrap_or_else(|e| e.into_inner());
     g.iter()
         .find(|r| x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1)
         .map(|r| r.target.clone())

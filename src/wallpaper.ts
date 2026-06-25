@@ -116,6 +116,10 @@ interface CV extends HTMLCanvasElement { _cssw?: number; _cssh?: number; }
 function sizeCanvas(c: CV) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const r = c.getBoundingClientRect();
+  // A hidden / not-yet-attached window measures 0×0; keep the last good size rather than
+  // collapsing the canvas to 1×1 (which mis-seeds motes and draws off-by-one). A real
+  // resize re-runs this once the window has dimensions.
+  if (r.width < 1 || r.height < 1) return;
   c.width = Math.max(1, Math.round(r.width * dpr));
   c.height = Math.max(1, Math.round(r.height * dpr));
   const ctx = c.getContext("2d")!;
@@ -149,9 +153,12 @@ function duskFactor(): number {
 function drawAmbientFrame(ts: number, b: Bands) {
   const c = ambient as CV;
   if (!motes.length) sizeAll();
+  // Fall back to the window size if the canvas hasn't measured yet (0×0 before attach),
+  // so a not-yet-sized surface never feeds NaN/0 dims into the draws.
+  const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
   const ctx = c.getContext("2d")!;
-  drawAmbient(ctx, motes, c._cssw!, c._cssh!, ts, b, pal);
-  drawLanterns(ctx, lanterns, c._cssw!, c._cssh!, ts, duskFactor()); // warm orbs at dusk
+  drawAmbient(ctx, motes, w, h, ts, b, pal);
+  drawLanterns(ctx, lanterns, w, h, ts, duskFactor()); // warm orbs at dusk
 }
 
 const sealState = makeSealState();
@@ -815,6 +822,7 @@ function updateClock() {
 
 let lastTs = 0;
 let glowVal = 0;
+let lastGlowStr = ""; // skip the glow opacity DOM write when the rounded value is unchanged
 let frameRate = 30; // wallpaper render cap (fps); 0 = monitor refresh rate
 let primaryOnly = true; // when true, only the primary monitor animates; secondaries stay static (~0 GPU)
 let loopGen = 0; // bumped on framerate/loop change so the old loop self-cancels
@@ -838,16 +846,20 @@ function drawFrame(ts: number) {
   const b = quietLevel > 0.01 ? { bass: raw.bass * qf, mid: raw.mid * qf, high: raw.high * qf } : raw;
   drawAmbientFrame(ts, b);
   drawVizFrame(ts, b, dt, takeBeat(), currentTempo()); // advances sealState (smoothed bands + pace)
-  // Rotate the decorative clock/seal rings here (was infinite CSS animation). On
-  // secondary monitors the clock/seal are hidden, so these writes cause no damage.
-  if (ring1) ring1.style.transform = `rotate(${(ts / 333.333) % 360}deg)`; // 120s cw
-  if (ring2) ring2.style.transform = `rotate(${(-ts / 222.222) % 360}deg)`; // 80s ccw
-  if (ring3) ring3.style.transform = `rotate(${(ts / 555.556) % 360}deg)`; // 200s cw
+  // Rotate the decorative clock/seal rings (was an infinite CSS animation). They live
+  // ONLY on the primary (hidden elsewhere), so skip the writes on a known-secondary.
+  if (isPrimary !== false) {
+    if (ring1) ring1.style.transform = `rotate(${(ts / 333.333) % 360}deg)`; // 120s cw
+    if (ring2) ring2.style.transform = `rotate(${(-ts / 222.222) % 360}deg)`; // 80s ccw
+    if (ring3) ring3.style.transform = `rotate(${(ts / 555.556) % 360}deg)`; // 200s cw
+  }
   // Glow follows the seal's already-enveloped bass, then eases again so brightness
-  // shifts gradually — no rapid flicker (photosensitivity-friendly).
+  // shifts gradually — no rapid flicker (photosensitivity-friendly). Skip the DOM write
+  // once the rounded value settles (a still/quiet scene costs nothing here).
   const glowTarget = parseFloat(glowOpacity({ bass: sealState.bass, mid: sealState.mid, high: sealState.high }, pal));
   glowVal += (glowTarget - glowVal) * 0.07;
-  glow.style.opacity = glowVal.toFixed(3);
+  const glowStr = glowVal.toFixed(3);
+  if (glowStr !== lastGlowStr) { lastGlowStr = glowStr; glow.style.opacity = glowStr; }
 }
 
 // Render loop. At 30/60 fps we drive with setTimeout, NOT requestAnimationFrame: an

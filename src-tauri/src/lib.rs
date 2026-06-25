@@ -340,13 +340,13 @@ fn reparent_controller(
 #[cfg(windows)]
 fn recreate_window(app: &AppHandle, i: usize, mon: &workerw::Monitor) {
     use std::sync::atomic::Ordering;
-    let old = slot_labels().lock().unwrap()[i].clone();
+    let old = slot_labels().lock().unwrap_or_else(|e| e.into_inner())[i].clone();
     if let Some(w) = app.get_webview_window(&old) {
         let _ = w.close();
     }
     let gen = RECREATE_GEN.fetch_add(1, Ordering::Relaxed);
     let new_label = format!("wp-r{gen}-{i}");
-    slot_labels().lock().unwrap()[i] = new_label.clone();
+    slot_labels().lock().unwrap_or_else(|e| e.into_inner())[i] = new_label.clone();
     let _ = tauri::WebviewWindowBuilder::new(
         app,
         &new_label,
@@ -385,7 +385,7 @@ fn ensure_attached(app: &AppHandle) {
     let monitors = workerw::enum_monitors();
     let n = monitors.len().min(MAX_WALLPAPER);
     // Publish the (capped) monitor list for the brushbuddy thread.
-    *monitors_store().lock().unwrap() = monitors[..n].to_vec();
+    *monitors_store().lock().unwrap_or_else(|e| e.into_inner()) = monitors[..n].to_vec();
 
     // A resume-from-sleep forces every attached slot to rebuild (a suspended
     // controller can return blank under a still-live host). Consume the flag once.
@@ -397,7 +397,7 @@ fn ensure_attached(app: &AppHandle) {
         if h != 0 {
             host::destroy_host(HWND(h as *mut core::ffi::c_void));
             ATTACHED[i].store(false, Ordering::Relaxed);
-            slot_rects().lock().unwrap()[i] = (0, 0, 0, 0, 0);
+            slot_rects().lock().unwrap_or_else(|e| e.into_inner())[i] = (0, 0, 0, 0, 0);
             log(app, format!("wallpaper-{i}: monitor removed — host destroyed"));
         }
     }
@@ -409,7 +409,7 @@ fn ensure_attached(app: &AppHandle) {
         let mut host_raw = HOSTS[i].load(Ordering::Relaxed);
         let mut host_alive =
             host_raw != 0 && workerw::is_window(HWND(host_raw as *mut core::ffi::c_void));
-        let stored = slot_rects().lock().unwrap()[i];
+        let stored = slot_rects().lock().unwrap_or_else(|e| e.into_inner())[i];
         let attached = ATTACHED[i].load(Ordering::Relaxed);
 
         if host_alive && attached && stored == cur {
@@ -469,11 +469,23 @@ fn ensure_attached(app: &AppHandle) {
             h
         };
 
-        slot_rects().lock().unwrap()[i] = cur;
-        let label = slot_labels().lock().unwrap()[i].clone();
+        slot_rects().lock().unwrap_or_else(|e| e.into_inner())[i] = cur;
+        let label = slot_labels().lock().unwrap_or_else(|e| e.into_inner())[i].clone();
         reparent_controller(app, i, &label, host, mon.width, mon.height);
         if let Some(w) = app.get_webview_window(&label) {
             let _ = w.hide(); // the empty shell; the webview now lives in the host
+        }
+    }
+
+    // If a cast is in progress, the monitor the overlay was covering may have just been
+    // unplugged — re-anchor it to a still-live monitor so it can't be orphaned off-screen
+    // (or left spanning two displays) with no way to dismiss it.
+    if workerw::overlay_casting() {
+        if let Some(w) = app.get_webview_window("overlay") {
+            if let Ok(h) = w.hwnd() {
+                workerw::cover_active_monitor(h);
+            }
+            let _ = w.set_focus();
         }
     }
 }
@@ -509,7 +521,7 @@ fn update_pause(app: &AppHandle) {
         // && short-circuits: when the option is off we never even probe.
         let want_paused = enabled && workerw::monitor_covered(&monitors[i]);
         if PAUSED[i].swap(want_paused, Ordering::Relaxed) != want_paused {
-            let label = slot_labels().lock().unwrap()[i].clone();
+            let label = slot_labels().lock().unwrap_or_else(|e| e.into_inner())[i].clone();
             set_controller_visible(app, &label, !want_paused);
             log(
                 app,
@@ -793,7 +805,7 @@ pub(crate) fn buddy_begin_drag(mx: i32, my: i32) {
     use std::sync::atomic::Ordering::Relaxed;
     buddy::GRAB_DX.store(mx as i64 - buddy::X.load(Relaxed), Relaxed);
     buddy::GRAB_DY.store(my as i64 - buddy::Y.load(Relaxed), Relaxed);
-    let mons = monitors_store().lock().unwrap();
+    let mons = monitors_store().lock().unwrap_or_else(|e| e.into_inner());
     if !mons.is_empty() {
         buddy::VX0.store(mons.iter().map(|m| m.x).min().unwrap() as i64, Relaxed);
         buddy::VY0.store(mons.iter().map(|m| m.y).min().unwrap() as i64, Relaxed);
@@ -879,7 +891,7 @@ fn spawn_buddy(app: AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(TICK_MS));
 
-            let mons = monitors_store().lock().unwrap().clone();
+            let mons = monitors_store().lock().unwrap_or_else(|e| e.into_inner()).clone();
             let n = mons.len();
             if n == 0 {
                 started = false;
@@ -1025,7 +1037,7 @@ fn spawn_buddy(app: AppHandle) {
 
             let bob_off = if dragging || rest != 0 { 0.0 } else { bob.sin() * 1.6 };
 
-            let labels = slot_labels().lock().unwrap().clone();
+            let labels = slot_labels().lock().unwrap_or_else(|e| e.into_inner()).clone();
             // Per-frame stream goes to every monitor only when the buddy is enabled AND
             // roaming all monitors. Otherwise (primary-only, or buddy off) we emit to all
             // monitors just on a structural change — owner moved, or the buddy was
@@ -1201,9 +1213,9 @@ fn hit_rects_map() -> &'static std::sync::Mutex<std::collections::HashMap<String
 /// locally-reported rects, offsetting each by its monitor origin.
 #[cfg(windows)]
 fn rebuild_hit_rects() {
-    let labels = slot_labels().lock().unwrap().clone();
-    let monitors = monitors_store().lock().unwrap().clone();
-    let map = hit_rects_map().lock().unwrap();
+    let labels = slot_labels().lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let monitors = monitors_store().lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let map = hit_rects_map().lock().unwrap_or_else(|e| e.into_inner());
     let mut out: Vec<(i32, i32, i32, i32, hook::HitTarget)> = Vec::new();
     for (label, rects) in map.iter() {
         let Some(idx) = labels.iter().position(|l| l == label) else {
@@ -1237,7 +1249,7 @@ fn rebuild_hit_rects() {
 fn set_hit_rects(label: String, rects: Vec<LocalRect>) {
     #[cfg(windows)]
     {
-        hit_rects_map().lock().unwrap().insert(label, rects);
+        hit_rects_map().lock().unwrap_or_else(|e| e.into_inner()).insert(label, rects);
         rebuild_hit_rects();
     }
     #[cfg(not(windows))]
@@ -1371,14 +1383,14 @@ fn widget_sizes_store() -> &'static std::sync::Mutex<WidgetSizes> {
 #[tauri::command]
 fn report_widget_sizes(app: AppHandle, sizes: std::collections::HashMap<String, WidgetSize>, aspect: f64) {
     let ws = WidgetSizes { sizes, aspect };
-    *widget_sizes_store().lock().unwrap() = ws.clone();
+    *widget_sizes_store().lock().unwrap_or_else(|e| e.into_inner()) = ws.clone();
     let _ = app.emit("widget:sizes", ws);
 }
 
 /// The control window reads the last-reported widget sizes when building its preview.
 #[tauri::command]
 fn get_widget_sizes() -> WidgetSizes {
-    widget_sizes_store().lock().unwrap().clone()
+    widget_sizes_store().lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// The current persisted settings (mode / mappings / pause) for the control UI
