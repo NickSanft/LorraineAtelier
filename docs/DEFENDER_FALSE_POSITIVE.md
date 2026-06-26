@@ -95,13 +95,14 @@ Ordered by value. "Done" = already in the tree.
   ("Open the Atelier when I sign in", on by choice). First execution of a
   zero-reputation download is when Defender scrutinizes hardest, so not writing a Run
   key then removes the loudest persistence signal.
-- **[recommended next] Embed PE version metadata.** Anonymous exes with no
-  FileDescription / CompanyName / ProductName / version score *worse* in AV ML — this is
-  cited as the cheapest meaningful fix. Add `tauri-winres` (build-dependency + `build.rs`
-  + a `[package.metadata.tauri-winres]` block) and fill every field. Verify in
-  Explorer → Properties → Details that none are blank.
-- **[recommended] Fill bundler metadata** in `tauri.conf.json`: add `bundle.publisher`
-  and keep `bundle.copyright` populated (blank publisher is a penalized gap).
+- **[done — already covered by Tauri 2] PE version metadata.** Verified on the rc.1 exe:
+  Tauri 2 already embeds ProductName, FileDescription, CompanyName, ProductVersion,
+  FileVersion, and LegalCopyright from `tauri.conf.json` — the binary is **not** anonymous.
+  So `tauri-winres` is unnecessary here (and would risk a duplicate-resource link
+  conflict). Only `OriginalFilename`/`InternalName` are blank — a negligible signal.
+- **[done] Explicit publisher.** Set `bundle.publisher` ("Divora") in `tauri.conf.json` so
+  the exe `CompanyName` and the NSIS installer's Publisher field are deliberate values
+  rather than the lowercased identifier segment. Applies to the next installer cut.
 - **[verify] Manifest requests `asInvoker`**, not admin (the app needs no elevation;
   elevation requests amplify suspicion + add a UAC prompt). Tauri's default is usually fine.
 - **[ok] No packing.** Rust release builds are not UPX/packed — keep it that way
