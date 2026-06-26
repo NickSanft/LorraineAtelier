@@ -1293,12 +1293,14 @@ fn set_run_at_startup(app: AppHandle, enabled: bool) -> String {
     }
 }
 
-/// Whether the control window should reveal itself on first paint: always on a
-/// normal (manual) launch and on first run, but never on an autostart launch
-/// (`--minimized`), which boots silently to the tray.
+/// Whether the control window should reveal itself on first paint. It now stays
+/// MINIMIZED (hidden to the tray) on every launch — including first run — so the gift
+/// never pops a settings panel that would spoil the surprise that magic is *drawn*.
+/// It opens on demand from the tray icon (or the ❧ Tower-of-Tomes button); the
+/// in-world casting nudge does the discovery instead of an up-front welcome.
 #[tauri::command]
 fn should_show_main() -> bool {
-    settings::get().first_run || !launched_minimized()
+    false
 }
 
 /// Set the wallpaper render cap (fps; 0 = monitor refresh). Persisted + broadcast so

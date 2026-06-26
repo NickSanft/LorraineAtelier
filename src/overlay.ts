@@ -362,9 +362,11 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
         blooming = false;
         openNamingRite();
       } else {
+        // Close the moment the bloom finishes — no trailing toast/delay. The launched
+        // app and the wallpaper's own bloom are the feedback; the overlay gets out of
+        // the way instantly.
         blooming = false;
-        showToast(fire.message, fire.icon);
-        setTimeout(hide, 700);
+        hide();
       }
     }
   };
