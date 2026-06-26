@@ -213,8 +213,15 @@ async function main() {
     if (s.firstRun) {
       const wp = document.getElementById("welcomePanel")!;
       wp.style.display = "flex";
-      document.getElementById("welcomeBegin")!.addEventListener("click", () => {
+      document.getElementById("welcomeBegin")!.addEventListener("click", async () => {
         wp.style.display = "none";
+        // Run-at-startup is now opt-in (default off); honour the welcome checkbox so the
+        // login-greeting is a consented choice rather than silent install-time persistence.
+        const wantStartup = (document.getElementById("welcomeStartup") as HTMLInputElement | null)?.checked ?? false;
+        if (wantStartup) {
+          startupOn = true; renderStartup();
+          try { await invoke("set_run_at_startup", { enabled: true }); } catch { /* */ }
+        }
         invoke("dismiss_welcome").then(() => append("welcome dismissed"));
       });
     }

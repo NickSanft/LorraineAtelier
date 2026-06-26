@@ -118,7 +118,9 @@ impl Default for Settings {
             colorblind: false,
             buddy_sprite: String::new(),
             widget_layout: HashMap::new(),
-            run_at_startup: true, // gift default: the atelier should greet her at every login
+            run_at_startup: false, // opt-in (consented in the welcome panel) so a fresh install
+            // writes no logon-persistence entry until chosen — both kinder consent and one
+            // fewer "malware-shaped" signal for Defender's ML on the unsigned binary.
             frame_rate: 30,        // gentle default; lowest GPU/CPU
             primary_only: true,    // default: full scene on primary, static art elsewhere
             buddy_enabled: true,   // the brushbuddy roams by default
