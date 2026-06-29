@@ -206,12 +206,21 @@ fn ensure_consumer(app: &AppHandle) {
 
 fn spawn_hook_thread(app: AppHandle) {
     std::thread::spawn(move || unsafe {
-        HOOK_THREAD_ID.store(GetCurrentThreadId(), Ordering::SeqCst);
+        // Capture our own thread id so teardown only clears the shared slot if it
+        // STILL names us. A fast off→on→off toggle can spawn the next hook thread
+        // before this one finishes draining WM_QUIT; an unconditional store(0) on
+        // exit would then clobber the NEW thread's id, so a later set_enabled(off)
+        // reads 0, never posts WM_QUIT, and that new pump thread blocks in
+        // GetMessageW forever — leaking the thread and its WH_MOUSE_LL hook (and,
+        // since RUNNING is cleared, the next "on" installs yet another live hook).
+        let my_tid = GetCurrentThreadId();
+        HOOK_THREAD_ID.store(my_tid, Ordering::SeqCst);
         let hook = match SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) {
             Ok(h) => h,
             Err(e) => {
                 RUNNING.store(false, Ordering::SeqCst);
-                HOOK_THREAD_ID.store(0, Ordering::SeqCst);
+                let _ =
+                    HOOK_THREAD_ID.compare_exchange(my_tid, 0, Ordering::SeqCst, Ordering::SeqCst);
                 let _ = app.emit("log", format!("hook: install failed: {e}"));
                 return;
             }
@@ -224,7 +233,9 @@ fn spawn_hook_thread(app: AppHandle) {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-        HOOK_THREAD_ID.store(0, Ordering::SeqCst);
+        // Only clear the slot if it still names us — a newer hook thread may have
+        // already claimed it during a rapid toggle, and zeroing its id would strand it.
+        let _ = HOOK_THREAD_ID.compare_exchange(my_tid, 0, Ordering::SeqCst, Ordering::SeqCst);
         let _ = app.emit("log", "hook: removed");
         // _guard drops here → UnhookWindowsHookEx.
     });

@@ -2,9 +2,17 @@
 // stay in sync with the tray (which can toggle the same state). The Spell Bindings
 // panel edits the persisted sigil→app mappings.
 const logEl = document.getElementById("log")!;
+// Cap the in-memory log. The control window is hidden (not destroyed), so it lives for
+// the whole app run; every Rust `log` event (incl. each cast/pill tap) and settings
+// toggle calls append(). Prepending onto textContent forever grew the text node without
+// bound — instead keep only the most recent LOG_MAX lines, newest first.
+const LOG_MAX = 200;
+const logLines: string[] = [];
 function append(line: string) {
   const t = new Date().toLocaleTimeString();
-  logEl.textContent = `[${t}] ${line}\n` + logEl.textContent;
+  logLines.unshift(`[${t}] ${line}`);
+  if (logLines.length > LOG_MAX) logLines.length = LOG_MAX;
+  logEl.textContent = logLines.join("\n");
 }
 
 const modeBtn = document.getElementById("mode") as HTMLButtonElement;

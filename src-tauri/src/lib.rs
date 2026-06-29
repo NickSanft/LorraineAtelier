@@ -1215,7 +1215,14 @@ fn hit_rects_map() -> &'static std::sync::Mutex<std::collections::HashMap<String
 fn rebuild_hit_rects() {
     let labels = slot_labels().lock().unwrap_or_else(|e| e.into_inner()).clone();
     let monitors = monitors_store().lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let map = hit_rects_map().lock().unwrap_or_else(|e| e.into_inner());
+    let mut map = hit_rects_map().lock().unwrap_or_else(|e| e.into_inner());
+    // Drop entries whose window no longer exists. recreate_window mints a fresh label
+    // on every recovery (explorer restart / DPI or resolution change / monitor hotplug
+    // / resume-from-sleep), so without this prune the map would grow one stale entry
+    // per such event over the app's 24/7 lifetime. Bounds it to the live slots
+    // (≤ MAX_WALLPAPER). slot_labels/monitors locks are already released (cloned above),
+    // so this adds no lock-order edge.
+    map.retain(|label, _| labels.iter().any(|l| l == label));
     let mut out: Vec<(i32, i32, i32, i32, hook::HitTarget)> = Vec::new();
     for (label, rects) in map.iter() {
         let Some(idx) = labels.iter().position(|l| l == label) else {
