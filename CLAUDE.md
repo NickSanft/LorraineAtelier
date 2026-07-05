@@ -34,6 +34,7 @@ On-desktop interactivity (clickable dock, draggable brushbuddy) is done with a *
 - **Per-window Tauri events:** a frontend `listen(event, handler)` with no target registers as `Any` and **bypasses `emit_to(label)` filtering** (every window receives every emit). Pattern for per-window events: Rust `emit_to(label)` **and** stamp the `label` into the payload; frontend registers `listen(event, handler, { target: selfLabel })` **and** drops any payload whose `label !== selfLabel`.
 - **Never keep an always-shown top-level WebView2 window.** It steals and holds the foreground (WebView2 calls `SetFocus` on load; `WS_EX_NOACTIVATE` doesn't stop programmatic `SetForegroundWindow`). The overlay must stay hidden-at-rest and appear only as a modal.
 - **Windows Defender:** the unsigned build trips a `Trojan:Win32/Bearfoos.B!ml` **ML false positive** (not a real infection). Clearance is **per-SHA-256** — submit the **exact final binary** to WDSI a few days before gifting and **don't rebuild after**. Full playbook: `docs/DEFENDER_FALSE_POSITIVE.md`.
+- **The recipient is flash-sensitive.** Treat photosensitivity safeguards as requirements, not nice-to-haves: the ≤3 Hz glow/effect clamps, gradual glow easing, and the dark WebView2 `DefaultBackgroundColor` that hides the recreate/resume/display-change flashes. Don't introduce rapid brightness flicker.
 
 ## Conventions
 

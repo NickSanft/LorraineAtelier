@@ -59,3 +59,29 @@ A 16-agent audit (7 scoped finders + per-finding adversarial verification) over 
 - PageFlip storybook destroys + nulls in the same synchronous tick (no orphaned instance/listeners).
 - Web Audio has **no** leak surface — the "audio" module is a pure band **visualizer** (math + a fixed 8-element array); there is no `AudioContext`/node graph.
 - Rust threads/channels/listeners are all single-spawn / atomic-gated; the architecture is emit-only (zero Rust-side event listeners); the one mpsc channel is drained synchronously.
+
+## Additional facts folded from the retired dev log (2026-07-03)
+
+Preserved here when the long-form project-history memory was retired; a coverage audit confirmed the rest of that log was already in these docs, the code, or `mockup/RESEARCH_BRIEF.md`. Each item below was otherwise only in code.
+
+**Build & environment**
+- **Art conversion:** `public/wallpaper.webp` was made from `mockup/assets/WitchHat2560x1440.jpg` via `ffmpeg` libwebp q80 (cwebp/ImageMagick weren't installed; ffmpeg was) → ~720 KB. Per-monitor `@3440`/`@1920` renditions are the personalization step (uncomment the `RENDITIONS` lines in `wallpaper.ts`).
+- **Avoid `@` in `public/` asset filenames** — it can break the Tauri asset-protocol URL; use a hyphen (hence `wallpaper-3440.jpg`, not `wallpaper@3440`).
+
+**Frontend / UI**
+- **Latent fractional-DPI buddy bug:** the brushbuddy translate offset in `wallpaper.ts` uses the Rust-supplied physical px directly as CSS px (assumes `dpr=1`). Correct on a 100%-scale setup; under fractional DPI the buddy/label is off by the scale factor. Fix by dividing `m.x`/`m.y` by `dpr`.
+- **Widget sizing** is monitor-proportional via a `--ui-scale` CSS var = `clamp(innerHeight/960, 1, 2.2)` (~50% larger on a 1440p monitor). **Dock vials must be content-width** (`white-space:nowrap` + padding, never a fixed width) or long labels overlap.
+- **Toggle no-op gotcha:** a control that flips a local *guess* of state can be stale, so the first click does nothing. Flip the authoritative persisted state (e.g. `toggle_mode`) and drive the label from the `settings:mode` / `viz:source-changed` broadcast — no optimistic UI.
+- **Day-mode legibility** is done entirely by the `DAY_VARS` palette swap in `applyMode` (darker/near-opaque `--c-text`/`--c-panel`, solid clock halo, bold AM/PM, gold Inscribe pill over an opaque panel) so the shared widgets read over the bright artwork — there are no day-specific class rules.
+- **Symbol glyphs** ⚝ ❧ ☾ ☀ aren't in Cinzel/EB Garamond and fall back to the Windows system font (verified fine). The self-hosted Cinzel + EB Garamond WOFF2 live in `public/fonts/` (~1.4 MB, 43 files).
+- **Taskbar-aware layout:** `workerw::Monitor` carries `work_{x,y,w,h}` from `rcWork` (monitor minus a space-reserving taskbar; equals the full monitor when the taskbar auto-hides). Rust emits physical-px insets (monitor rect − work rect) in `BuddyMsg`; `wallpaper.ts applyInsets()` insets the whole `#root` scene (CSS px = inset/dpr) so it sits above the taskbar, refreshed on the watchdog tick.
+
+**Casting / recognizer**
+- **Misfire math (precise):** the cursed-misfire chance is symmetry-driven `0.10 + (1 − symmetry) * 0.12` (≈10% at perfect symmetry → 22% fully lopsided), gated on `score ≥ 50` and not inverse/sideways/first-cast — the "~13%" shorthand elsewhere is just the midpoint. Ink is a process `AtomicI32` starting at 78, −22 per cast, clamped to ≥ 6.
+- **Casting lore basis** (full lore in `mockup/RESEARCH_BRIEF.md`): the canon seal = sigil (element) + signs (modifiers) + a ring that fires only on closure, assembled inside-out; sign geometry is semantic (tilt = spin, size = magnitude, flip/mirror = invert). That is *why* the recognizer scores size/steadiness/symmetry and treats **CW = cast / CCW = dismiss** (a flipped/reversed seal cancels). Forbidden magic = casting on the human body (memory-wipe the lone exception → the "clear history" egg hook); the cursed misfire's canon identity is a Brimmed-Cap backfire, and Petrification is the manga's opening miscast. Ink = woodcruor / conjuring ink from Silverwood.
+
+**Audio (WASAPI)**
+- **`initialize_client` must take `Direction::Capture`, not `Direction::Render`, even for a Render/loopback device** — passing `Render` makes `get_audiocaptureclient` fail with `AUDCLNT_E_WRONG_ENDPOINT_TYPE` (0x88890003). `initialize_mta()` returns an HRESULT (use `.ok().map_err(...)`).
+
+**Foreground**
+- Why the always-shown-overlay approach was abandoned, concretely: the foreground-demoting watchdog called `SetForegroundWindow`, which returned `true` but left the foreground on the overlay or dropped it to 0/limbo, and demote → limbo → Windows re-activating the topmost overlay was a self-perpetuating tug-of-war.

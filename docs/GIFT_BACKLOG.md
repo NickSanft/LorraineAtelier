@@ -16,6 +16,15 @@
 
 Single-monitor/laptop + fractional-DPI hardening + first-paint dark guard; crash resilience (supervised thread restart + local crash log); full reduced-motion sweep through seal/ambient/glow; clean-uninstall + restore-defaults; tempo/BPM-locked seal; pre-birthday countdown ring; in-world "grimoire" help card; solar time-of-day lighting curve (L); buddy night rest cycle; floatglow lanterns at dusk (**shipped**); name-your-fudemushi.
 
+## Still-deferred implementation items (from the dev log)
+
+Distinct from the ideation shortlist above — these are known unfinished pieces, not new ideas:
+
+- **Widget layout customization** — let the recipient reposition on-screen widgets per monitor (persisted layout).
+- **Broader `castLog` persistence** — persist/expand the discovered-cast log beyond the current settings layer.
+- **Real reversed-ring dismiss** — a counter-clockwise seal currently shows a themed bloom + toast; a best-effort `WM_CLOSE` of the focused app (R-DISMISS) is the later enhancement.
+- **Brushbuddy enrichment** — tail sway, naps (with render pause), startled squash-stretch hop on `cast:fire`, ink-trail, and a white/striped skin picker (the `--buddy-*` CSS-var seam is ready).
+
 ## Deliberately SKIP before July 25 (risk / taste) — the durable guidance
 
 - **Anything that touches the recognizer or the daily casting loop** — the canon "signs" middle phase, the stillness/modifier sign, an "L"-monogram centre-sigil (all high recognizer-fragility against the golden corpus; could silently break her everyday cast).
