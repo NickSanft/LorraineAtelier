@@ -54,6 +54,11 @@
          driven — no flicker (photosensitivity-safe). */
       .dcell, #castGlyph, #attunePill { transition: filter .18s ease, transform .18s ease; transform-origin: center; }
       .dhover { filter: brightness(1.2); transform: scale(1.05); }
+      /* The witch's-belt dock keeps its dark frosted background in BOTH modes, unlike the
+         other panels — so pin its text / edge / halo to the night (light-on-dark) palette.
+         Otherwise day mode paints dark text on the dark belt and the labels (Steam /
+         Discord / Tomes / Night …) become nearly unreadable. */
+      #dock { --c-text: #efe6d2; --c-soft: rgba(239,230,210,.78); --c-faint: rgba(239,230,210,.42); --c-edge: rgba(232,184,74,.42); --c-halo: rgba(11,9,20,.62); }
     </style>
   </head>
   <body>
