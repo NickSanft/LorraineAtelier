@@ -946,6 +946,15 @@ function isQuietNow(): boolean {
 function applyQuiet(active: boolean) {
   quietActive = active;
   if (quietEl) quietEl.style.opacity = active ? "0.5" : "0"; // CSS eases the dim
+  // Keep the clock legible through quiet hours (22:00–07:00 is exactly when it's most
+  // glanced at): lift it above the embers scrim and give it its own gentler eased dim,
+  // so the time doesn't drop to ~half contrast with the rest of the scene. The dim rides
+  // the element, so it follows a repositioned clock.
+  if (clockEl) {
+    clockEl.style.transition = "opacity 4s ease";
+    clockEl.style.zIndex = active ? "95" : "20";
+    clockEl.style.opacity = active ? "0.82" : "1";
+  }
 }
 function checkQuiet() {
   if (!quietPreview) applyQuiet(isQuietNow());
