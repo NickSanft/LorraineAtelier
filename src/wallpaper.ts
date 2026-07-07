@@ -254,6 +254,28 @@ listen<string>("dock:tap", (e) => {
   else if (p) flashTap(p);
 });
 
+// ---- hover affordance ----
+// The wallpaper takes no DOM input, so the dock can't get a real :hover. Rust's mouse hook
+// emits `dock:hover` (a cell key, or "" on leave) as the cursor moves over the dock on the
+// exposed desktop; light that cell so the pointer has feedback that it's clickable.
+function hoverEl(payload: string): Element | null {
+  if (payload.startsWith("pill:")) return document.querySelector(`[data-pill="${payload.slice(5)}"]`);
+  if (payload === "cast") return document.getElementById("castGlyph");
+  if (payload === "mode") return document.getElementById("modeIndicator");
+  if (payload === "attune") return document.getElementById("attunePill");
+  if (payload === "tomes") return document.getElementById("tomesBtn");
+  return null;
+}
+let hoveredEl: Element | null = null;
+listen<string>("dock:hover", (e) => {
+  if (isPrimary === false) return; // only the primary shows the dock
+  const next = hoverEl(e.payload || "");
+  if (next === hoveredEl) return;
+  if (hoveredEl) hoveredEl.classList.remove("dhover");
+  hoveredEl = next;
+  if (hoveredEl) hoveredEl.classList.add("dhover");
+});
+
 // ---- desktop-layer interactivity: publish hit-rects to Rust ----
 // The dock has pointer-events:none and the wallpaper sits below the icons, so the
 // OS never delivers clicks here. Instead Rust runs a low-level mouse hook and acts

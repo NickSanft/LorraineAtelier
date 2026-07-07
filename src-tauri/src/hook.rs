@@ -20,7 +20,7 @@
 
 #![cfg(windows)]
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
@@ -48,6 +48,9 @@ static SENDER: OnceLock<Mutex<Sender<HookMsg>>> = OnceLock::new();
 enum HookMsg {
     /// A confirmed hit on a desktop widget (already gated on the exposed desktop).
     Action(HitTarget),
+    /// The hovered dock cell changed — the consumer verifies the desktop is exposed
+    /// there and emits `dock:hover` so the wallpaper can light that cell (empty = leave).
+    Hover { x: i32, y: i32, key: String },
     /// A buddy drag ended — persist its dropped position (file I/O, off the proc).
     PersistBuddy,
 }
@@ -80,14 +83,81 @@ fn rects() -> &'static Mutex<Vec<GlobalRect>> {
     R.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+/// Union bounding box of all hit-rects [x0, y0, x1, y1] in virtual-desktop physical px —
+/// a cheap gate so hover hit-testing runs only when the cursor is near the dock. All zero
+/// = no rects published (hover off).
+static HOVER_AABB: [AtomicI32; 4] =
+    [AtomicI32::new(0), AtomicI32::new(0), AtomicI32::new(0), AtomicI32::new(0)];
+/// The currently-hovered cell, encoded, so the proc only sends a Hover on a real change.
+static LAST_HOVER_CODE: AtomicU8 = AtomicU8::new(0);
+
 /// Replace the published hit-rects (virtual-desktop physical px). lib.rs rebuilds
 /// and pushes these whenever a wallpaper reports its dock/cast layout.
 pub fn set_global_rects(v: Vec<(i32, i32, i32, i32, HitTarget)>) {
-    let mapped = v
+    let (mut ux0, mut uy0, mut ux1, mut uy1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    let mapped: Vec<GlobalRect> = v
         .into_iter()
-        .map(|(x0, y0, x1, y1, target)| GlobalRect { x0, y0, x1, y1, target })
+        .map(|(x0, y0, x1, y1, target)| {
+            ux0 = ux0.min(x0);
+            uy0 = uy0.min(y0);
+            ux1 = ux1.max(x1);
+            uy1 = uy1.max(y1);
+            GlobalRect { x0, y0, x1, y1, target }
+        })
         .collect();
+    let (ax0, ay0, ax1, ay1) = if mapped.is_empty() { (0, 0, 0, 0) } else { (ux0, uy0, ux1, uy1) };
+    HOVER_AABB[0].store(ax0, Ordering::Relaxed);
+    HOVER_AABB[1].store(ay0, Ordering::Relaxed);
+    HOVER_AABB[2].store(ax1, Ordering::Relaxed);
+    HOVER_AABB[3].store(ay1, Ordering::Relaxed);
     *rects().lock().unwrap_or_else(|e| e.into_inner()) = mapped;
+}
+
+/// Encode a hovered target so the proc can dedupe (send only on change) without allocating.
+fn hover_code(t: &Option<HitTarget>) -> u8 {
+    match t {
+        None => 0,
+        Some(HitTarget::Cast) => 1,
+        Some(HitTarget::Mode) => 2,
+        Some(HitTarget::Attune) => 3,
+        Some(HitTarget::Tomes) => 4,
+        Some(HitTarget::Pill(k)) => match k.as_str() {
+            "fire" => 5,
+            "water" => 6,
+            "wind" => 7,
+            "earth" => 8,
+            _ => 9,
+        },
+    }
+}
+
+/// The frontend key for a hovered target (mirrors the `dock:tap` payloads); empty = none.
+fn hover_string(t: &Option<HitTarget>) -> String {
+    match t {
+        None => String::new(),
+        Some(HitTarget::Cast) => "cast".into(),
+        Some(HitTarget::Mode) => "mode".into(),
+        Some(HitTarget::Attune) => "attune".into(),
+        Some(HitTarget::Tomes) => "tomes".into(),
+        Some(HitTarget::Pill(k)) => format!("pill:{k}"),
+    }
+}
+
+/// Hot-path hover tracking: a cheap union-AABB gate (four atomic loads), then the full
+/// point-in-rect test ONLY when the cursor is inside the dock region; hand a Hover to the
+/// consumer only when the hovered cell actually changes. The heavier desktop-exposed check
+/// happens off the proc, in the consumer.
+fn update_hover(x: i32, y: i32) {
+    let x0 = HOVER_AABB[0].load(Ordering::Relaxed);
+    let y0 = HOVER_AABB[1].load(Ordering::Relaxed);
+    let x1 = HOVER_AABB[2].load(Ordering::Relaxed);
+    let y1 = HOVER_AABB[3].load(Ordering::Relaxed);
+    let inside = x1 > x0 && x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    let target = if inside { hit_test(x, y) } else { None };
+    let code = hover_code(&target);
+    if LAST_HOVER_CODE.swap(code, Ordering::Relaxed) != code {
+        send(HookMsg::Hover { x, y, key: hover_string(&target) });
+    }
 }
 
 /// Push a message to the consumer (the Mutex is only ever locked by the hook
@@ -140,12 +210,15 @@ unsafe extern "system" fn mouse_proc(n_code: i32, w_param: WPARAM, l_param: LPAR
                 return LRESULT(1); // swallow → no desktop rubber-band while dragging
             }
         } else if msg == WM_MOUSEMOVE {
+            let info = &*(l_param.0 as *const MSLLHOOKSTRUCT);
             if crate::buddy_dragging() {
-                let info = &*(l_param.0 as *const MSLLHOOKSTRUCT);
                 crate::buddy_drag_to(info.pt.x, info.pt.y);
                 // Do NOT suppress moves: a swallowed WM_MOUSEMOVE freezes the system
                 // cursor (that's how the cursor advances), which kills the drag. The
                 // down was already swallowed, so no desktop rubber-band is active.
+            } else {
+                // Track dock hover (cheap AABB gate; full test only over the dock).
+                update_hover(info.pt.x, info.pt.y);
             }
         } else if msg == WM_LBUTTONUP {
             if crate::buddy_dragging() {
@@ -195,6 +268,13 @@ fn ensure_consumer(app: &AppHandle) {
                     let _ = app.emit("dock:tap", "tomes");
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || crate::hook_open_tomes(&app2));
+                }
+                HookMsg::Hover { x, y, key } => {
+                    // Light a cell only when the desktop is exposed there (an app on top
+                    // keeps priority); an empty key is a leave and always clears.
+                    let show =
+                        !key.is_empty() && workerw::desktop_exposed_at(POINT { x, y });
+                    let _ = app.emit("dock:hover", if show { key } else { String::new() });
                 }
                 HookMsg::PersistBuddy => {
                     crate::buddy_persist(); // file I/O, off the hook proc

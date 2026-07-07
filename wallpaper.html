@@ -48,6 +48,12 @@
          visibly acknowledged. transform-origin centre keeps the press centred. */
       @keyframes dock-tap { 0% { transform: scale(1); filter: brightness(1); } 28% { transform: scale(.82); filter: brightness(1.65); } 100% { transform: scale(1); filter: brightness(1); } }
       .dtap { animation: dock-tap .38s cubic-bezier(.3,.85,.35,1); transform-origin: center; }
+      /* Hover affordance: Rust's low-level mouse hook emits `dock:hover` as the cursor
+         moves over the dock on the exposed desktop, so the interactive cells respond to the
+         pointer even though the wallpaper takes no DOM input. A single .18s ease, user-
+         driven — no flicker (photosensitivity-safe). */
+      .dcell, #castGlyph, #attunePill { transition: filter .18s ease, transform .18s ease; transform-origin: center; }
+      .dhover { filter: brightness(1.2); transform: scale(1.05); }
     </style>
   </head>
   <body>
