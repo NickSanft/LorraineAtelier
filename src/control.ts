@@ -449,7 +449,27 @@ async function main() {
   await event.listen<boolean>("settings:interactive", (e) => { interactOn = !!e.payload; renderInteract(); });
   await event.listen<boolean>("settings:colorblind", (e) => { colorblindOn = !!e.payload; renderColorblind(); });
   await event.listen<boolean>("settings:runatstartup", (e) => { startupOn = !!e.payload; renderStartup(); });
-  await event.listen<{ attuned: boolean }>("viz:source-changed", (e) => { attuned = !!e.payload.attuned; renderAttune(); });
+  const attuneNote = document.getElementById("attuneNote")!;
+  let attuneNoteTimer = 0;
+  function showAttuneNote(reason: string) {
+    // Map the technical reason (from audio.rs) to an in-world line; a bare "stopped" is
+    // the user's own toggle-off, so it never shows here.
+    const friendly = /device|endpoint|activate|wasapi|hresult|0x/i.test(reason)
+      ? "The Atelier could not reach your speakers to listen — is sound playing?"
+      : reason === "thread spawn failed"
+        ? "The Atelier could not begin listening just now — try Attune again."
+        : "The Atelier could not hear the music — is anything playing?";
+    attuneNote.textContent = "♪ " + friendly;
+    attuneNote.style.display = "block";
+    clearTimeout(attuneNoteTimer);
+    attuneNoteTimer = window.setTimeout(() => { attuneNote.style.display = "none"; }, 8000);
+  }
+  await event.listen<{ attuned: boolean; reason?: string }>("viz:source-changed", (e) => {
+    attuned = !!e.payload.attuned; renderAttune();
+    const reason = e.payload.reason || "";
+    if (!attuned && reason && reason !== "stopped") { showAttuneNote(reason); append("attune failed: " + reason); }
+    else if (attuned) { attuneNote.style.display = "none"; }
+  });
   // Tower of Tomes: refresh on a new cast / secret-found; surface it on the dock click.
   await event.listen("tomes:changed", () => { void refreshTomes(); });
   await event.listen("open:tomes", () => {
