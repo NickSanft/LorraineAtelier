@@ -830,6 +830,7 @@ let glowVal = 0;
 let lastGlowStr = ""; // skip the glow opacity DOM write when the rounded value is unchanged
 let frameRate = 30; // wallpaper render cap (fps); 0 = monitor refresh rate
 let primaryOnly = true; // when true, only the primary monitor animates; secondaries stay static (~0 GPU)
+let displayOn = true; // false while the monitor is powered off or the session is locked → pause the loop
 let loopGen = 0; // bumped on framerate/loop change so the old loop self-cancels
 let loopRunning = false;
 let quietActive = false; // quiet-hours "embers" dim active
@@ -893,7 +894,9 @@ function stopLoop() {
 // static (no-damage) webview produces ~0 compositor presents → ~0 GPU, while still
 // showing the static art (the wall image + tint). No restart / no OS-wallpaper change.
 function updateLoopState() {
-  const animate = !primaryOnly || isPrimary !== false;
+  // Pause entirely while the display is off / the session is locked (nothing is visible),
+  // else animate unless this is a known secondary under "primary only".
+  const animate = displayOn && (!primaryOnly || isPrimary !== false);
   if (animate) {
     if (!loopRunning) startLoop();
   } else if (loopRunning) {
@@ -972,6 +975,9 @@ listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
 listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; updateLoopState(); });
+// Monitor powered off / session locked → pause the render loop; on / unlocked → resume.
+// The last frame stays on the (now-off or hidden) canvas, so resuming just eases — no flash.
+listen<boolean>("power:display", (e) => { displayOn = e.payload !== false; updateLoopState(); });
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
 // A new cast/secret updates the inscribed count.
 listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => updateGlyphCount(s?.discovered)).catch(() => {}); });

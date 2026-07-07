@@ -14,12 +14,14 @@
 #![cfg(windows)]
 
 use std::sync::OnceLock;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
-use windows::core::{w, PCWSTR};
+use windows::core::{w, GUID, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Power::RegisterSuspendResumeNotification;
+use windows::Win32::System::Power::{
+    RegisterPowerSettingNotification, RegisterSuspendResumeNotification, POWERBROADCAST_SETTING,
+};
 use windows::Win32::System::RemoteDesktop::WTSRegisterSessionNotification;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
@@ -35,13 +37,30 @@ const NOTIFY_FOR_THIS_SESSION: u32 = 0;
 // PBT_APMRESUMEAUTOMATIC is sent on EVERY resume; PBT_APMRESUMESUSPEND is sent
 // ADDITIONALLY on a user-initiated wake — so handling only the former recovers once.
 const PBT_APMRESUMEAUTOMATIC: u32 = 0x0012;
+// PBT_POWERSETTINGCHANGE carries a POWERBROADCAST_SETTING; with GUID_CONSOLE_DISPLAY_STATE
+// it reports the monitor powering on/off/dim, so the wallpaper can stop drawing while the
+// screen is off (the dominant idle cost — Chromium can't self-throttle here because native
+// occlusion detection is deliberately disabled for the WorkerW-parented webview).
+const PBT_POWERSETTINGCHANGE: u32 = 0x8013;
 const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
+const WTS_SESSION_LOCK: u32 = 0x7;
 const WTS_SESSION_UNLOCK: u32 = 0x8;
 const WTS_SESSION_LOGON: u32 = 0x5;
+/// GUID_CONSOLE_DISPLAY_STATE — Data[0]: 0 = display off, 1 = on, 2 = dimmed.
+const GUID_CONSOLE_DISPLAY_STATE: GUID = GUID::from_u128(0x6fe69556_704a_47a0_8f24_c28d936fda47);
 
 /// The AppHandle, so the WndProc (on the pump thread) can queue recovery onto main.
 static APP: OnceLock<AppHandle> = OnceLock::new();
 const WATCH_CLASS: PCWSTR = w!("LorraineSessionWatch");
+
+/// Broadcast the display-power state to the wallpaper webviews so they pause the render
+/// loop while the monitor is off or the session is locked. Pure idle savings: the canvas
+/// keeps its last frame, so resume just continues easing — no flash (photosensitivity-safe).
+fn emit_display(on: bool) {
+    if let Some(app) = APP.get() {
+        let _ = app.emit("power:display", on);
+    }
+}
 
 /// Queue the recovery onto the main thread (WebView2 controller calls require it).
 fn dispatch(force: bool) {
@@ -69,14 +88,25 @@ unsafe extern "system" fn watch_wndproc(
             // Resume from sleep/hibernate → force a full re-attach (guaranteed clean).
             if ev == PBT_APMRESUMEAUTOMATIC {
                 dispatch(true);
+            } else if ev == PBT_POWERSETTINGCHANGE && lparam.0 != 0 {
+                // Monitor power state changed → pause/resume the render loop.
+                let setting = &*(lparam.0 as *const POWERBROADCAST_SETTING);
+                if setting.PowerSetting == GUID_CONSOLE_DISPLAY_STATE {
+                    // Data[0]: 0 = off (pause), 1 = on, 2 = dimmed (still visible → keep on).
+                    emit_display(setting.Data[0] != 0);
+                }
             }
             LRESULT(1) // TRUE — grant the broadcast
         }
         WM_WTSSESSION_CHANGE => {
             let ev = wparam.0 as u32;
-            // Unlock / logon → a normal validation pass (catches a host that died
-            // while locked; healthy controllers are left untouched — no reload).
-            if ev == WTS_SESSION_UNLOCK || ev == WTS_SESSION_LOGON {
+            // Lock → pause the render loop (the desktop isn't visible). Unlock / logon →
+            // resume, then a normal validation pass (catches a host that died while locked;
+            // healthy controllers are left untouched — no reload).
+            if ev == WTS_SESSION_LOCK {
+                emit_display(false);
+            } else if ev == WTS_SESSION_UNLOCK || ev == WTS_SESSION_LOGON {
+                emit_display(true);
                 dispatch(false);
             }
             LRESULT(0)
@@ -127,6 +157,12 @@ pub fn start(app: AppHandle) {
         // broadcast — message-only windows don't receive broadcasts otherwise). Keep
         // the handle bound for the thread's life so the registration stays active.
         let _power_notify = RegisterSuspendResumeNotification(HANDLE(hwnd.0), DEVICE_NOTIFY_WINDOW_HANDLE);
+        // Monitor on/off/dim notifications (drives the render-loop pause while the screen is off).
+        let _display_notify = RegisterPowerSettingNotification(
+            HANDLE(hwnd.0),
+            &GUID_CONSOLE_DISPLAY_STATE,
+            DEVICE_NOTIFY_WINDOW_HANDLE,
+        );
         let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
 
         // Pump: sent messages (the notifications) are dispatched to the WndProc while
