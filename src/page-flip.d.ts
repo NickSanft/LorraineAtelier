@@ -11,6 +11,7 @@ declare module "page-flip/dist/js/page-flip.module.js" {
     updateFromHtml(items: NodeListOf<Element> | HTMLElement[]): void;
     flipNext(corner?: "top" | "bottom"): void;
     flipPrev(corner?: "top" | "bottom"): void;
+    flip(page: number, corner?: "top" | "bottom"): void;
     turnToNextPage(): void;
     turnToPrevPage(): void;
     getCurrentPageIndex(): number;
