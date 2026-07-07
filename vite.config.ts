@@ -1,12 +1,11 @@
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
-import solid from "vite-plugin-solid";
 
 // Multi-page app: a control window (index.html), the wallpaper surface
 // (wallpaper.html, rendered behind the desktop icons), and the casting
-// overlay (overlay.html, a summoned top-most window).
+// overlay (overlay.html, a summoned top-most window). Vanilla TS + Canvas2D,
+// no framework — so no Vite framework plugins.
 export default defineConfig({
-  plugins: [solid()],
   clearScreen: false,
   server: {
     // 1430 (not Tauri's usual 1420) to avoid colliding with DivoraVoiceMod's
