@@ -17,6 +17,21 @@
          colorblind toggle can swap them to an Okabe-Ito safe palette. */
       :root { --el-fire: #e8954a; --el-water: #5a93f0; --el-wind: #2fd6c6; --el-earth: #c79a4c; --el-light: #f5d27e; }
       body.cb { --el-fire: #d55e00; --el-water: #0072b2; --el-wind: #009e73; --el-earth: #e69f00; --el-light: #f0e442; }
+      /* Register the palette vars as animatable <color>s so a Day/Night toggle EASES the
+         widget chrome (panels, borders, text, gold, halos) over the same ~1.1s the art
+         crossfades, instead of the chrome snapping while the artwork catches up. One large
+         gradual luminance step, not flicker → photosensitivity-safe. */
+      @property --c-text    { syntax: "<color>"; inherits: true; initial-value: #efe6d2; }
+      @property --c-soft    { syntax: "<color>"; inherits: true; initial-value: rgba(239,230,210,.66); }
+      @property --c-faint   { syntax: "<color>"; inherits: true; initial-value: rgba(239,230,210,.4); }
+      @property --c-panel   { syntax: "<color>"; inherits: true; initial-value: rgba(22,20,36,.6); }
+      @property --c-panel-2 { syntax: "<color>"; inherits: true; initial-value: rgba(22,20,36,.82); }
+      @property --c-edge    { syntax: "<color>"; inherits: true; initial-value: rgba(232,184,74,.42); }
+      @property --c-gold    { syntax: "<color>"; inherits: true; initial-value: #e8b84a; }
+      @property --c-gold-2  { syntax: "<color>"; inherits: true; initial-value: #f5d27e; }
+      @property --c-teal    { syntax: "<color>"; inherits: true; initial-value: #2fd6c6; }
+      @property --c-halo    { syntax: "<color>"; inherits: true; initial-value: rgba(11,9,20,.62); }
+      #root { transition: --c-text 1.1s ease, --c-soft 1.1s ease, --c-faint 1.1s ease, --c-panel 1.1s ease, --c-panel-2 1.1s ease, --c-edge 1.1s ease, --c-gold 1.1s ease, --c-gold-2 1.1s ease, --c-teal 1.1s ease, --c-halo 1.1s ease; }
       /* Vertical dock: cascade column direction through the dock's nested flex rows so
          every icon (ink, the four glyphs, Inscribe, Tomes, mode) stacks top-to-bottom. */
       #dock.dock-vertical, #dock.dock-vertical > div, #dock.dock-vertical > div > div { flex-direction: column; align-items: center; }
