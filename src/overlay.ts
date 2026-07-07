@@ -115,8 +115,13 @@ function isSmallMark(stroke: Pt[]): boolean {
   return bboxDiag(stroke) < Math.min(W, H) * 0.13;
 }
 
+// Never let WebView2's stock context menu (Refresh / Print / Save as…) appear over the
+// hand-inked casting slate — the single most immersion-breaking thing that can show here.
+window.addEventListener("contextmenu", (e) => e.preventDefault());
+
 cast.addEventListener("pointerdown", (e) => {
   if (blooming) return;
+  if (e.button !== 0) return; // only the primary button inscribes (pen/touch report button 0)
   e.preventDefault();
   cast.setPointerCapture(e.pointerId);
   curStroke = [pt(e)];
