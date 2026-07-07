@@ -547,7 +547,9 @@ function updateSbNav() {
 }
 
 function turnPage() {
-  if (!pageFlip || sbCur >= sbTotal - 3) { reset(); hide(); } // showing the last content → close
+  // Closing on the last spread: hide() only. reset() re-shows the casting slate, which
+  // would flash for the ~tens of ms until Rust hides the window; the next open resets.
+  if (!pageFlip || sbCur >= sbTotal - 3) { hide(); }
   else pageFlip.flipNext();
 }
 
@@ -658,6 +660,10 @@ async function hide() {
 
 document.getElementById("btnClear")!.addEventListener("click", reset);
 document.getElementById("btnDismiss")!.addEventListener("click", () => { reset(); hide(); });
+// Clicking the dark backdrop closes the overlay — the universal modal escape hatch,
+// and the only obvious way out of the storybook. A stroke that drifts off the canvas
+// can't trigger this because the canvas holds pointer capture for the whole stroke.
+scrim.addEventListener("click", () => hide());
 sbTurn.addEventListener("click", turnPage); // turn the page, or close the book on the last
 nrName.addEventListener("click", () => finishNaming(true));
 nrLater.addEventListener("click", () => finishNaming(false));
@@ -668,7 +674,7 @@ window.addEventListener("keydown", (e) => {
     else if (e.key === "Escape") { e.preventDefault(); finishNaming(false); }
     return;
   }
-  if (e.key === "Escape") { reset(); hide(); }
+  if (e.key === "Escape") { if (storybookOpen) hide(); else { reset(); hide(); } } // storybook: no slate flash
   else if (storybookOpen && pageFlip) {
     if (e.key === "ArrowRight" || e.key === " ") turnPage();
     else if (e.key === "ArrowLeft" && sbCur > 0) pageFlip.flipPrev();
