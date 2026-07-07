@@ -188,6 +188,45 @@ struct CastFireMsg {
     ink: i32,
 }
 
+/// A short, friendly display name for a bound launch target, for the overlay's pre-cast
+/// reading (mirrors the dock's labelForTarget so the HUD and dock agree). "files"/empty
+/// → Files; http(s) → the site's first hostname label; another scheme (steam:/discord:/…)
+/// → the scheme; a path → the basename without extension.
+fn friendly_target_name(target: &str) -> String {
+    let s = target.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("files") {
+        return "Files".into();
+    }
+    if let Some(colon) = s.find(':') {
+        let scheme = s[..colon].to_ascii_lowercase();
+        // len >= 2 rules out a Windows drive letter ("C:\...").
+        let is_scheme = scheme.len() >= 2
+            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'));
+        if is_scheme {
+            if scheme == "http" || scheme == "https" {
+                let rest = s[colon + 1..].trim_start_matches('/');
+                let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+                let host = host.strip_prefix("www.").unwrap_or(host);
+                let label = host.split('.').next().unwrap_or(host);
+                return capitalize_first(label);
+            } else if scheme != "file" {
+                return capitalize_first(&scheme);
+            }
+        }
+    }
+    let base = s.rsplit(['\\', '/']).next().unwrap_or(s);
+    let stem = base.rsplit_once('.').map(|(a, _)| a).unwrap_or(base);
+    capitalize_first(stem)
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(f) => f.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 /// Classify the central sigil stroke (overlay phase 1).
 #[tauri::command]
 pub fn classify_sigil(points: Vec<Point>) -> SigilDto {
@@ -199,7 +238,15 @@ pub fn classify_sigil(points: Vec<Point>) -> SigilDto {
             key: s.key.into(),
             element: s.element.into(),
             glyph: s.glyph.into(),
-            app: s.app.into(),
+            // Show what the element ACTUALLY launches (its user binding), not the
+            // compile-time default, so the pre-cast reading matches the spell that fires.
+            app: if s.key == "light" {
+                s.app.into()
+            } else {
+                crate::settings::mapping_for(s.key)
+                    .map(|t| friendly_target_name(&t))
+                    .unwrap_or_else(|| s.app.into())
+            },
             hue: s.hue.into(),
             sigil: s.sigil.into(),
         })
