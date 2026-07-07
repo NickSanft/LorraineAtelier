@@ -1,7 +1,7 @@
 export {}; // module scope
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { PageFlip } from "page-flip/dist/js/page-flip.module.js";
 import { drawGlyphPath } from "./atelier/draw/viz";
 import type { Sigil } from "./atelier/palette";
@@ -367,10 +367,12 @@ function bloom(sigil: Sigil, score: number, inverse: boolean, sideways: boolean,
         blooming = false;
         openNamingRite();
       } else {
-        // Close the moment the bloom finishes — no trailing toast/delay. The launched
-        // app and the wallpaper's own bloom are the feedback; the overlay gets out of
-        // the way instantly.
+        // Close the moment the bloom finishes — no trailing toast/delay. Surface the
+        // score-tiered / dismiss flavour on the WALLPAPER instead (a gentle parchment
+        // caption near the dock) so a clean seal reads differently from a barely-passed
+        // one — the neatness feedback that instant-close otherwise threw away.
         blooming = false;
+        if (fire.message) void emit("cast:msg", { message: fire.message, icon: fire.icon, key: fire.key });
         hide();
       }
     }

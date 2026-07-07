@@ -191,6 +191,12 @@
         </div>
       </div>
 
+      <!-- Cast caption: the score-tiered / dismiss flavour, surfaced near the dock after a
+           cast (the overlay closes instantly). A single CSS opacity fade — no flicker. -->
+      <div id="castMsg" style="position:absolute;left:50%;bottom:118px;transform:translateX(-50%);z-index:46;pointer-events:none;opacity:0;transition:opacity .6s ease;max-width:74vw;display:flex;align-items:center;gap:9px;padding:8px 18px;border-radius:999px;border:1px solid var(--c-edge);background:var(--c-panel-2);backdrop-filter:blur(7px);font-family:'EB Garamond',serif;font-size:15px;color:var(--c-text);text-shadow:0 1px 3px rgba(8,6,14,.6);box-shadow:0 8px 28px rgba(8,6,14,.4);white-space:nowrap">
+        <span id="castMsgIcon" style="color:var(--c-gold)">✦</span><span id="castMsgText"></span>
+      </div>
+
       <!-- Quiet-hours "embers" scrim (13.3): an eased dim over the whole scene during
            the configured night window. Pure CSS opacity transition so it works on
            static secondary monitors too; never takes input. -->

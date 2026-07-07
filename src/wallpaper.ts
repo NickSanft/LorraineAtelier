@@ -797,6 +797,22 @@ listen<CastFire>("cast:fire", (e) => {
   startBloom(m);
 });
 
+// The score-tiered / dismiss flavour, surfaced as a gentle parchment caption near the
+// dock after a cast (the overlay emits this before it closes). Primary monitor only; a
+// single CSS opacity fade — photosensitivity-safe.
+const castMsgEl = document.getElementById("castMsg");
+const castMsgTextEl = document.getElementById("castMsgText");
+const castMsgIconEl = document.getElementById("castMsgIcon");
+let castMsgTimer = 0;
+listen<{ message: string; icon: string; key: string }>("cast:msg", (e) => {
+  if (isPrimary === false || !castMsgEl) return;
+  if (castMsgTextEl) castMsgTextEl.textContent = e.payload.message || "";
+  if (castMsgIconEl) castMsgIconEl.textContent = e.payload.icon || "✦";
+  castMsgEl.style.opacity = "1";
+  clearTimeout(castMsgTimer);
+  castMsgTimer = window.setTimeout(() => { castMsgEl.style.opacity = "0"; }, 4200);
+});
+
 // Celebratory bloom (birthday auto-bloom / dedication preview) — no ink change.
 listen("gift:bloom", () => startBloom({ sigil: "circle", score: 95, inverse: false, sideways: false, jutDir: 0, hue: pal.gold, key: "", ink: -1 }));
 
