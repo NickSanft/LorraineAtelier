@@ -468,6 +468,11 @@ listen<BuddyMsg>("buddy", (e) => {
   applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
   if (!buddyEl) return;
   if (!m.visible) { buddyEl.style.opacity = "0"; if (buddyLabel) buddyLabel.style.opacity = "0"; return; } // hidden (off its monitor, or not yet hatched): skip transform → no damage
+  // m.x/m.y arrive in physical px (Rust virtual-desktop coords); the transform and the
+  // insets below are CSS px. Convert to CSS px so the drawn sprite lands where Rust
+  // hit-tests it — otherwise, under fractional DPI (125%/150%, the laptop default) the
+  // buddy is drawn dpr× too far from the origin and the drag never grabs it.
+  const dpr = window.devicePixelRatio || 1;
   if (useFrames) advanceBuddyFrame(m); // step the walk cycle (5x while held)
   // While held, the buddy lifts (scales up) and gains a warm glow — the "picked up" cue.
   const lift = m.held ? 1.16 : 1;
@@ -488,7 +493,7 @@ listen<BuddyMsg>("buddy", (e) => {
     buddyEl.style.opacity = "1";
   }
   buddyEl.style.transform =
-    `translate(${m.x - 44 - insetLeftCss}px, ${m.y - 22 - insetTopCss}px) scale(${sx * bf}, ${uiScale * lift * bf})`;
+    `translate(${m.x / dpr - 44 - insetLeftCss}px, ${m.y / dpr - 22 - insetTopCss}px) scale(${sx * bf}, ${uiScale * lift * bf})`;
   buddyEl.style.filter = (m.held
     ? "drop-shadow(0 3px 6px rgba(8,6,14,.5)) drop-shadow(0 0 9px var(--c-gold))"
     : "drop-shadow(0 1px 3px rgba(8,6,14,.5))") + bornGlow;
@@ -501,7 +506,7 @@ listen<BuddyMsg>("buddy", (e) => {
     if (showLabel) {
       if (buddyLabel.textContent !== buddyName) buddyLabel.textContent = buddyName;
       buddyLabel.style.transform =
-        `translate(${(m.x - insetLeftCss).toFixed(1)}px, ${(m.y - insetTopCss - 34 * uiScale).toFixed(1)}px) translateX(-50%)`;
+        `translate(${(m.x / dpr - insetLeftCss).toFixed(1)}px, ${(m.y / dpr - insetTopCss - 34 * uiScale).toFixed(1)}px) translateX(-50%)`;
     }
     buddyLabel.style.opacity = showLabel ? "1" : "0";
   }
