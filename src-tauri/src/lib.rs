@@ -29,7 +29,7 @@ mod autostart;
 #[cfg(windows)]
 mod power;
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
@@ -168,6 +168,7 @@ pub(crate) fn hook_cast(app: &AppHandle) {
 pub(crate) fn hook_toggle_mode(app: &AppHandle) {
     let next = if settings::get().mode == "day" { "night" } else { "day" };
     settings::set_mode(app, next.to_string());
+    refresh_tray_checks();
 }
 
 /// Toggle "Attune to music" from the seal's pill (mirrors the tray arm; audio
@@ -179,6 +180,7 @@ pub(crate) fn hook_toggle_attune(app: &AppHandle) {
     } else {
         audio::start(app.clone());
     }
+    refresh_tray_checks();
 }
 
 /// Open the Tower of Tomes from the dock's ❧ button: show the control window and
@@ -1179,6 +1181,7 @@ fn set_viz_source(app: AppHandle, attuned: bool) -> String {
         } else {
             audio::stop();
         }
+        refresh_tray_checks();
         return format!("viz attuned={attuned}");
     }
     #[cfg(not(windows))]
@@ -1298,6 +1301,7 @@ fn set_desktop_interactive(app: AppHandle, enabled: bool) -> String {
     #[cfg(windows)]
     hook::set_enabled(&app, enabled);
     let _ = app.emit("settings:interactive", enabled);
+    refresh_tray_checks();
     format!("desktop_interactive={enabled}")
 }
 
@@ -1318,6 +1322,7 @@ fn set_run_at_startup(app: AppHandle, enabled: bool) -> String {
     settings::set_run_at_startup(enabled);
     let r = if enabled { autostart::enable() } else { autostart::disable() };
     let _ = app.emit("settings:runatstartup", enabled);
+    refresh_tray_checks();
     match r {
         Ok(()) => format!("run_at_startup={enabled}"),
         Err(e) => format!("run_at_startup={enabled} (registry error: {e})"),
@@ -1438,6 +1443,7 @@ fn get_settings() -> settings::Settings {
 #[tauri::command]
 fn set_mode(app: AppHandle, mode: String) -> String {
     settings::set_mode(&app, mode.clone());
+    refresh_tray_checks();
     format!("mode={mode}")
 }
 
@@ -1447,6 +1453,7 @@ fn set_mode(app: AppHandle, mode: String) -> String {
 fn toggle_mode(app: AppHandle) -> String {
     let next = if settings::get().mode == "day" { "night" } else { "day" };
     settings::set_mode(&app, next.to_string());
+    refresh_tray_checks();
     next.to_string()
 }
 
@@ -1599,21 +1606,78 @@ fn preview_naming_rite(app: AppHandle) -> String {
 // Tray
 // ---------------------------------------------------------------------------
 
+/// Handles to the four stateful tray checkmarks, so any toggle path (tray, the dock
+/// mouse-hook, or the control panel) can re-sync them and the tray always shows the real
+/// current state instead of a stateless "(toggle)" label.
+struct TrayChecks {
+    attune: CheckMenuItem<tauri::Wry>,
+    mode: CheckMenuItem<tauri::Wry>,
+    interact: CheckMenuItem<tauri::Wry>,
+    startup: CheckMenuItem<tauri::Wry>,
+}
+static TRAY_CHECKS: std::sync::OnceLock<TrayChecks> = std::sync::OnceLock::new();
+
+/// Re-sync the tray checkmarks from the authoritative state. Cheap, and a no-op until the
+/// tray is built; safe to call from any toggle path. (settings::set_* and audio start/stop
+/// flip their state synchronously, so reading it back here is correct.)
+pub(crate) fn refresh_tray_checks() {
+    if let Some(t) = TRAY_CHECKS.get() {
+        let s = settings::get();
+        let _ = t.mode.set_checked(s.mode == "day");
+        let _ = t.interact.set_checked(s.desktop_interactive);
+        let _ = t.startup.set_checked(s.run_at_startup);
+        #[cfg(windows)]
+        {
+            let _ = t.attune.set_checked(audio::is_capturing());
+        }
+    }
+}
+
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    let inscribe = MenuItem::with_id(app, "inscribe", "Inscribe (overlay)", true, None::<&str>)?;
-    let attune = MenuItem::with_id(app, "attune", "Attune to music (toggle)", true, None::<&str>)?;
-    let mode = MenuItem::with_id(app, "mode", "Day / Night (toggle)", true, None::<&str>)?;
-    let interact =
-        MenuItem::with_id(app, "interact", "Desktop interactivity (toggle)", true, None::<&str>)?;
+    // Seed the check-states from the persisted settings so the tray reflects reality the
+    // moment it opens (the old plain items said "(toggle)" and showed no current state).
+    let s0 = settings::get();
+    let attuned0 = {
+        #[cfg(windows)]
+        {
+            audio::is_capturing()
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    };
+    let inscribe =
+        MenuItem::with_id(app, "inscribe", "Inscribe a sigil  (Ctrl+Alt+W)", true, None::<&str>)?;
+    let attune =
+        CheckMenuItem::with_id(app, "attune", "Attune to music", true, attuned0, None::<&str>)?;
+    let mode =
+        CheckMenuItem::with_id(app, "mode", "Day mode (else Night)", true, s0.mode == "day", None::<&str>)?;
+    let interact = CheckMenuItem::with_id(
+        app,
+        "interact",
+        "Desktop interactivity",
+        true,
+        s0.desktop_interactive,
+        None::<&str>,
+    )?;
     let startup =
-        MenuItem::with_id(app, "startup", "Run at startup (toggle)", true, None::<&str>)?;
-    let show = MenuItem::with_id(app, "show", "Show control", true, None::<&str>)?;
-    let reattach = MenuItem::with_id(app, "reattach", "Re-attach wallpaper", true, None::<&str>)?;
+        CheckMenuItem::with_id(app, "startup", "Open at sign-in", true, s0.run_at_startup, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show the Atelier", true, None::<&str>)?;
+    let reattach = MenuItem::with_id(app, "reattach", "Re-inscribe the mural", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[&inscribe, &attune, &mode, &interact, &startup, &show, &reattach, &quit],
     )?;
+    // Keep the check handles so any toggle path (tray, dock hook, control panel) can
+    // re-sync the marks via refresh_tray_checks().
+    let _ = TRAY_CHECKS.set(TrayChecks {
+        attune: attune.clone(),
+        mode: mode.clone(),
+        interact: interact.clone(),
+        startup: startup.clone(),
+    });
 
     let mut builder = TrayIconBuilder::with_id("lorraine-tray")
         .tooltip("Lorraine Atelier")
@@ -1632,10 +1696,12 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                         audio::start(app.clone());
                     }
                 }
+                refresh_tray_checks();
             }
             "mode" => {
                 let next = if settings::get().mode == "day" { "night" } else { "day" };
                 settings::set_mode(app, next.to_string());
+                refresh_tray_checks();
             }
             "interact" => {
                 let next = !settings::get().desktop_interactive;
@@ -1643,12 +1709,14 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 #[cfg(windows)]
                 hook::set_enabled(app, next);
                 let _ = app.emit("settings:interactive", next);
+                refresh_tray_checks();
             }
             "startup" => {
                 let next = !settings::get().run_at_startup;
                 settings::set_run_at_startup(next);
                 let _ = if next { autostart::enable() } else { autostart::disable() };
                 let _ = app.emit("settings:runatstartup", next);
+                refresh_tray_checks();
             }
             "show" => {
                 if let Some(w) = app.get_webview_window("main") {
