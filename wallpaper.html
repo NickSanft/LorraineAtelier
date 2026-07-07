@@ -39,7 +39,7 @@
     <!-- Root carries NIGHT palette vars inline so the wallpaper loads dark (no day→night flash). -->
     <div id="root" style="position:fixed;inset:0;overflow:hidden;font-family:'EB Garamond',serif;--c-text:#efe6d2;--c-soft:rgba(239,230,210,.66);--c-faint:rgba(239,230,210,.4);--c-panel:rgba(22,20,36,.6);--c-panel-2:rgba(22,20,36,.82);--c-edge:rgba(232,184,74,.42);--c-gold:#e8b84a;--c-gold-2:#f5d27e;--c-teal:#2fd6c6;--c-ink:#0d0b16;--c-halo:rgba(11,9,20,.62);color:var(--c-text)">
 
-      <img id="wall" src="/wallpaper.webp" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.58) saturate(.85) contrast(1.02);transition:filter 1.1s ease" />
+      <img id="wall" src="/wallpaper.webp" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.58) saturate(.85) contrast(1.02);opacity:0;transition:filter 1.1s ease, opacity .55s ease" />
       <div id="tint" style="position:absolute;inset:0;pointer-events:none;mix-blend-mode:multiply;background:radial-gradient(125% 120% at 50% 38%, rgba(44,32,72,.55), rgba(10,8,20,.8));opacity:.92;transition:opacity 1.1s ease, background 1.1s ease"></div>
       <div id="glow" style="position:absolute;left:50%;bottom:6%;width:60vw;height:60vw;transform:translateX(-50%);pointer-events:none;border-radius:50%;background:radial-gradient(circle, rgba(47,214,198,.5), rgba(47,214,198,0) 62%);mix-blend-mode:screen;opacity:0;will-change:opacity"></div>
       <canvas id="ambient" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></canvas>

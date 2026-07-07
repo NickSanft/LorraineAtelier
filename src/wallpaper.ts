@@ -70,6 +70,11 @@ wall.onerror = () => {
     wall.src = BASE_ART;
   }
 };
+// The art starts at opacity:0 in the HTML; bloom it in from dark on first paint (esp. a
+// recreated webview after an explorer restart) instead of popping. Gradual fade →
+// photosensitivity-safe. Only the first successful load fades; later rendition swaps don't.
+if (wall.complete && wall.naturalWidth > 0) wall.style.opacity = "1";
+else wall.addEventListener("load", () => { wall.style.opacity = "1"; }, { once: true });
 // Choose the rendition from the CURRENT physical size. The wallpaper webview is
 // created at the config's default size and only sized to its monitor after attach,
 // so this must run again once the real size arrives (resize + delayed retries),
