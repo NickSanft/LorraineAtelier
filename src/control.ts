@@ -78,7 +78,7 @@ function renderStartup() {
   startupBtn.classList.toggle("on", startupOn);
 }
 function renderPrimaryOnly() {
-  primaryOnlyBtn.textContent = `Effects: ${primaryOnlyOn ? "primary only" : "all monitors"}`;
+  primaryOnlyBtn.textContent = `Animate: ${primaryOnlyOn ? "main screen only" : "every screen"}`;
   primaryOnlyBtn.classList.toggle("on", !primaryOnlyOn); // highlight the richer (all-monitors) mode
 }
 function renderBuddyEnabled() {
@@ -282,7 +282,7 @@ async function main() {
     primaryOnlyOn = !primaryOnlyOn;
     renderPrimaryOnly();
     await invoke("set_primary_only", { enabled: primaryOnlyOn });
-    append(`effects → ${primaryOnlyOn ? "primary only" : "all monitors"}`);
+    append(`animate → ${primaryOnlyOn ? "main screen only" : "every screen"}`);
   });
   buddyEnabledBtn.addEventListener("click", async () => {
     buddyEnabledOn = !buddyEnabledOn;
