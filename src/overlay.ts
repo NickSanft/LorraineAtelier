@@ -48,6 +48,7 @@ const sbBook = document.getElementById("sbBook")!;
 const sbCoverEl = document.getElementById("sbCover")!;
 const sbDots = document.getElementById("sbDots")!;
 const sbTurn = document.getElementById("sbTurn") as HTMLButtonElement;
+const sbPrev = document.getElementById("sbPrev") as HTMLButtonElement;
 const namingRite = document.getElementById("namingRite") as HTMLElement;
 const nrBug = document.getElementById("nrBug") as HTMLImageElement;
 const nrInput = document.getElementById("nrInput") as HTMLInputElement;
@@ -539,9 +540,12 @@ function updateSbNav() {
   sbDots.innerHTML = "";
   for (let i = 0; i < sbContent; i++) {
     const d = document.createElement("span");
-    d.style.cssText = `width:7px;height:7px;border-radius:50%;background:${i === active ? "#e8b84a" : "rgba(232,200,120,.28)"}`;
+    d.style.cssText = `width:9px;height:9px;border-radius:50%;cursor:pointer;background:${i === active ? "#e8b84a" : "rgba(232,200,120,.28)"}`;
+    d.title = `Page ${i + 1}`;
+    d.addEventListener("click", () => { if (pageFlip) pageFlip.flip(i * 2 + 1); }); // jump to that opening
     sbDots.appendChild(d);
   }
+  sbPrev.style.visibility = sbCur > 0 ? "visible" : "hidden"; // no "back" on the first opening
   // the last content spread starts at index sbTotal-3 (the trailing blank is last).
   sbTurn.textContent = sbCur >= sbTotal - 3 ? "Close the book ✦" : "Turn the page ▸";
 }
@@ -665,6 +669,7 @@ document.getElementById("btnDismiss")!.addEventListener("click", () => { reset()
 // can't trigger this because the canvas holds pointer capture for the whole stroke.
 scrim.addEventListener("click", () => hide());
 sbTurn.addEventListener("click", turnPage); // turn the page, or close the book on the last
+sbPrev.addEventListener("click", () => { if (pageFlip && sbCur > 0) pageFlip.flipPrev(); });
 nrName.addEventListener("click", () => finishNaming(true));
 nrLater.addEventListener("click", () => finishNaming(false));
 nrInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); finishNaming(true); } });
