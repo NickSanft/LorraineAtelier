@@ -8,11 +8,25 @@ const logEl = document.getElementById("log")!;
 // bound — instead keep only the most recent LOG_MAX lines, newest first.
 const LOG_MAX = 200;
 const logLines: string[] = [];
+const statusEl = document.getElementById("statusLine");
+// The prominent one-line status maps the few genuinely-bad log strings to in-world copy;
+// everything else (benign, already friendly) shows as-is. The raw timestamped history
+// stays in the collapsed "Scribe's ledger" for troubleshooting.
+function friendlyStatus(line: string): string {
+  const l = line.toLowerCase();
+  if (/host create failed|did not take|re-inscribe failed|reattach failed/.test(l))
+    return "The mural would not take to the wall — try “Re-inscribe the mural”, or restart the Atelier.";
+  if (/attune failed/.test(l)) return "The Atelier could not hear the music just now.";
+  if (/get_settings ✗|thread spawn failed|registry error/.test(l))
+    return "Something went awry — the ledger below has the details.";
+  return line;
+}
 function append(line: string) {
   const t = new Date().toLocaleTimeString();
   logLines.unshift(`[${t}] ${line}`);
   if (logLines.length > LOG_MAX) logLines.length = LOG_MAX;
   logEl.textContent = logLines.join("\n");
+  if (statusEl) statusEl.textContent = friendlyStatus(line);
 }
 
 const modeBtn = document.getElementById("mode") as HTMLButtonElement;
