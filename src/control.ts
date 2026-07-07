@@ -337,6 +337,42 @@ async function main() {
     invoke("set_buddy_sprite", { src: "" }).then(() => append("buddy sprite → built-in"));
   });
 
+  // Restore the scene-tuning defaults (keepsakes are preserved server-side). Two-step
+  // confirm so a stray click can't wipe her tuning; the control panel doesn't listen to
+  // most of these events, so re-read and re-render every control after the reset.
+  const restoreBtn = document.getElementById("restoreDefaults") as HTMLButtonElement;
+  let restoreArmed = false, restoreTimer = 0;
+  const disarmRestore = () => { restoreArmed = false; restoreBtn.textContent = "Restore the Atelier's defaults"; restoreBtn.classList.remove("on"); };
+  restoreBtn.addEventListener("click", async () => {
+    if (!restoreArmed) {
+      restoreArmed = true;
+      restoreBtn.textContent = "Click again to confirm";
+      restoreBtn.classList.add("on");
+      clearTimeout(restoreTimer);
+      restoreTimer = window.setTimeout(disarmRestore, 4000);
+      return;
+    }
+    clearTimeout(restoreTimer);
+    disarmRestore();
+    await invoke("restore_defaults");
+    try {
+      const s = await invoke<SettingsDto>("get_settings");
+      mode = s.mode === "day" ? "day" : "night";
+      pauseOn = !!s.pauseOnFullscreen;
+      colorblindOn = !!s.colorblind;
+      primaryOnlyOn = s.primaryOnly !== false;
+      buddyEnabledOn = s.buddyEnabled !== false;
+      quietEnabledOn = s.quietHoursEnabled !== false;
+      quietStartInput.value = s.quietStart || "22:00";
+      quietEndInput.value = s.quietEnd || "07:00";
+      frameRateSel.value = String(s.frameRate ?? 30);
+      ringSpeedSel.value = String(s.ringSpeed ?? 0.5);
+      buddySpriteInput.value = s.buddySprite || "";
+      renderMode(); renderPause(); renderColorblind(); renderPrimaryOnly(); renderBuddyEnabled(); renderQuiet();
+    } catch { /* */ }
+    append("the Atelier's defaults were restored");
+  });
+
   // ---- Widget layout editor: drag chips in a monitor preview + a size slider ----
   interface WPos { x: number; y: number; scale: number; vertical?: boolean }
   const LAYOUT_DEFAULTS: Record<string, { x: number; y: number }> = { clock: { x: 3, y: 7 }, seal: { x: 4, y: 55 }, dock: { x: 28, y: 86 }, titlePill: { x: 3, y: 2 }, glyphsPill: { x: 68, y: 2 } };

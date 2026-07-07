@@ -244,6 +244,31 @@ pub fn reset_mappings() {
     save();
 }
 
+/// Reset the cosmetic scene-tuning fields to their gift defaults, PRESERVING keepsakes:
+/// spell bindings, discovered tomes, the fudemushi's name/hatched state + dropped position,
+/// the secret-found flag, widget layout, the birthday/Silver-Eve guards, run-at-startup,
+/// desktop interactivity, and the gift dedication. Returns the resulting Settings so the
+/// caller can broadcast the changes to every surface.
+pub fn restore_defaults() -> Settings {
+    let d = Settings::default();
+    {
+        let mut s = store().lock().unwrap_or_else(|e| e.into_inner());
+        s.mode = d.mode;
+        s.pause_on_fullscreen = d.pause_on_fullscreen;
+        s.colorblind = d.colorblind;
+        s.frame_rate = d.frame_rate;
+        s.primary_only = d.primary_only;
+        s.buddy_enabled = d.buddy_enabled;
+        s.buddy_sprite = d.buddy_sprite;
+        s.quiet_hours_enabled = d.quiet_hours_enabled;
+        s.quiet_start = d.quiet_start;
+        s.quiet_end = d.quiet_end;
+        s.ring_speed = d.ring_speed;
+    }
+    save();
+    get()
+}
+
 pub fn set_secret_found(found: bool) {
     store().lock().unwrap_or_else(|e| e.into_inner()).secret_found = found;
     save();

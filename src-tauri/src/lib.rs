@@ -1564,6 +1564,27 @@ fn set_ring_speed(app: AppHandle, speed: f32) -> String {
     format!("ring speed -> {s}")
 }
 
+/// Restore the cosmetic scene-tuning settings to their gift defaults; keepsakes (tomes,
+/// the named fudemushi, secret-found, spell bindings, widget layout, autostart) are
+/// preserved. Re-broadcasts every live setting so all surfaces update without a restart.
+#[tauri::command]
+fn restore_defaults(app: AppHandle) -> String {
+    let s = settings::restore_defaults();
+    let _ = app.emit("settings:mode", s.mode.clone());
+    let _ = app.emit("settings:framerate", s.frame_rate);
+    let _ = app.emit("settings:ringspeed", s.ring_speed);
+    let _ = app.emit("settings:primaryonly", s.primary_only);
+    let _ = app.emit("settings:colorblind", s.colorblind);
+    let _ = app.emit("settings:buddyenabled", s.buddy_enabled);
+    let _ = app.emit("settings:buddySprite", s.buddy_sprite.clone());
+    let _ = app.emit(
+        "settings:quiethours",
+        serde_json::json!({ "enabled": s.quiet_hours_enabled, "start": s.quiet_start, "end": s.quiet_end }),
+    );
+    refresh_tray_checks();
+    "restored".into()
+}
+
 /// Reveal/unreveal the fudemushi directly (the first cast normally hatches it).
 /// Persisted + broadcast so the wallpaper shows/hides it live.
 #[tauri::command]
@@ -1822,6 +1843,7 @@ pub fn run() {
             toggle_mode,
             set_mapping,
             reset_mappings,
+            restore_defaults,
             mark_secret_found,
             preview_storybook,
             dismiss_welcome,
