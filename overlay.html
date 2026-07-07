@@ -62,8 +62,9 @@
       .neat .track > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--c-teal), var(--c-gold)); transition: width .25s ease; }
       .legend { display: flex; gap: 10px; }
       .legend .s { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--c-soft); }
-      .legend .g { font-size: 17px; line-height: 1; }
-      .legend .n { font-family: "Cinzel", serif; font-size: 7.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--c-faint); }
+      .legend .g { font-size: 18px; line-height: 1; }
+      .legend .n { font-family: "Cinzel", serif; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--c-soft); }
+      #castPrimer { font-size: 11.5px; font-style: italic; color: var(--c-faint); text-align: center; max-width: min(58vmin, 520px); line-height: 1.5; }
       .btns { display: flex; gap: 10px; }
       .btn {
         padding: 9px 18px; border-radius: 8px; border: 1px solid rgba(239,230,210,.3); background: transparent;
@@ -132,12 +133,14 @@
           <div class="s"><span class="g" style="color:var(--el-water)">▽</span><span class="n">Water</span></div>
           <div class="s"><span class="g" style="color:var(--el-wind)">○</span><span class="n">Wind</span></div>
           <div class="s"><span class="g" style="color:var(--el-earth)">□</span><span class="n">Earth</span></div>
+          <div class="s"><span class="g" style="color:var(--el-light)">✦</span><span class="n">Light</span></div>
         </div>
         <div class="btns">
           <button class="btn" id="btnClear">Clear</button>
           <button class="btn" id="btnDismiss">Dismiss</button>
         </div>
       </div>
+      <div id="castPrimer">✦ Light = the △ Fire sigil with a centre dot &nbsp;·&nbsp; ↺ a reversed (counter-clockwise) ring dismisses &nbsp;·&nbsp; Esc closes</div>
     </div>
     <div id="toast"><span class="ic" id="toastIcon">✦</span><span id="toastMsg"></span></div>
 
