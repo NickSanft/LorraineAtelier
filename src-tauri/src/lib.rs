@@ -1118,6 +1118,30 @@ fn detach_wallpaper(app: AppHandle) -> String {
     }
 }
 
+/// A read-only snapshot for the control panel's "re-inscribe" feedback: how many
+/// wallpaper slots are currently attached vs. how many monitors we know about.
+/// Attachment completes asynchronously (the flag is set inside `with_webview`), so the
+/// panel polls this a beat after `reattach_wallpaper` instead of trusting an immediate
+/// return that always read "requested".
+#[tauri::command]
+fn attach_status() -> (usize, usize) {
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::Ordering;
+        let mons = monitors_store()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
+            .min(MAX_WALLPAPER);
+        let attached = ATTACHED.iter().filter(|f| f.load(Ordering::Relaxed)).count();
+        return (attached, mons);
+    }
+    #[cfg(not(windows))]
+    {
+        (0, 0)
+    }
+}
+
 #[tauri::command]
 fn toggle_overlay(app: AppHandle) {
     overlay_toggle(&app);
@@ -1707,6 +1731,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             reattach_wallpaper,
             detach_wallpaper,
+            attach_status,
             toggle_overlay,
             close_casting,
             get_status,

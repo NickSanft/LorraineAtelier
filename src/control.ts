@@ -422,9 +422,27 @@ async function main() {
   document.getElementById("previewBuddyBirth")!.addEventListener("click", () => invoke("preview_buddy_birth").then(() => append("previewing fudemushi birth")));
   document.getElementById("previewNaming")!.addEventListener("click", () => invoke("preview_naming_rite").then(() => append("previewing naming rite")));
 
-  document.getElementById("reattach")!.addEventListener("click", () => invoke("reattach_wallpaper").then(() => append("re-attach requested")));
+  document.getElementById("reattach")!.addEventListener("click", async () => {
+    append("re-inscribing the mural…");
+    try {
+      await invoke("reattach_wallpaper");
+      // Attachment finishes asynchronously, so report the real outcome a beat later.
+      setTimeout(async () => {
+        try {
+          const [n, m] = await invoke<[number, number]>("attach_status");
+          append(
+            m > 0 && n >= m ? `the mural is drawn on ${m === 1 ? "your screen" : `all ${m} screens`} ✦`
+              : n > 0 ? `the mural is drawn on ${n} of ${m} screens`
+              : "the mural did not take — try again, or restart the Atelier"
+          );
+        } catch { /* */ }
+      }, 1200);
+    } catch (e) { append("re-inscribe failed: " + e); }
+  });
   document.getElementById("overlay")!.addEventListener("click", () => invoke("toggle_overlay"));
-  document.getElementById("detach")!.addEventListener("click", () => invoke("detach_wallpaper").then(() => append("detached")));
+  // Detach destroys every wallpaper window; it's hidden behind the dev flag (Ctrl+Shift+D)
+  // since the watchdog re-attaches automatically and a stray click would blank the gift.
+  document.getElementById("detach")!.addEventListener("click", () => invoke("detach_wallpaper").then(() => append("the mural was taken down")));
 
   // Stay in sync when the same state is toggled from the tray.
   await event.listen<string>("settings:mode", (e) => { mode = e.payload === "day" ? "day" : "night"; renderMode(); });
