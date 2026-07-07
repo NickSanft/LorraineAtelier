@@ -25,6 +25,11 @@
       button.on { border-color: var(--gold); background: rgba(232,184,74,.14); color: #f5d27e; }
       .dev { display: flex; gap: 8px; flex-wrap: wrap; }
       .dev button { font-size: 10px; opacity: .82; }
+      /* Narrative-preview buttons spoil the surprises (the dedication, Silver Eve,
+         the misfire, the fudemushi's birth/naming). Hidden by default so the recipient
+         can never trip them; Ctrl+Shift+D reveals them for the giver's own testing. */
+      .devonly { display: none !important; }
+      body.dev .devonly { display: inline-block !important; }
       #bindings { display: flex; flex-direction: column; gap: 8px; }
       .brow { display: flex; align-items: center; gap: 10px; }
       .brow .bg { font-size: 18px; width: 22px; text-align: center; line-height: 1; }
@@ -79,12 +84,12 @@
         <button id="interact">Desktop interactivity: off</button>
         <button id="colorblind">Colorblind palette: off</button>
         <button id="startup">Run at startup: off</button>
-        <button id="preview">Preview dedication</button>
-        <button id="previewSilver">Preview Silver Eve</button>
-        <button id="previewMisfire">Preview misfire</button>
-        <button id="previewCastHint">Preview casting nudge</button>
-        <button id="previewBuddyBirth">Preview fudemushi</button>
-        <button id="previewNaming">Preview naming rite</button>
+        <button id="preview" class="devonly">Preview dedication</button>
+        <button id="previewSilver" class="devonly">Preview Silver Eve</button>
+        <button id="previewMisfire" class="devonly">Preview misfire</button>
+        <button id="previewCastHint" class="devonly">Preview casting nudge</button>
+        <button id="previewBuddyBirth" class="devonly">Preview fudemushi</button>
+        <button id="previewNaming" class="devonly">Preview naming rite</button>
       </div>
       <div class="toggles" style="align-items:center">
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#efe6d2;font-family:'Cinzel',serif;letter-spacing:.04em">Framerate

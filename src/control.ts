@@ -442,6 +442,17 @@ async function main() {
   await event.listen<string>("log", (e) => append(e.payload));
   append("control ready");
 
+  // The narrative-preview buttons are hidden by default (class `devonly`) so they can
+  // never spoil a surprise for the recipient. Ctrl+Shift+D reveals them for the giver's
+  // own testing; the reveal is per-session (default hidden on every launch).
+  window.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === "D" || e.key === "d")) {
+      e.preventDefault();
+      const on = document.body.classList.toggle("dev");
+      append(on ? "dev previews revealed" : "dev previews hidden");
+    }
+  });
+
   // Reveal-on-paint: the window is created hidden (so an autostart `--minimized`
   // launch boots silently to the tray). Now that every panel is built, show it
   // unless this launch should stay hidden.
