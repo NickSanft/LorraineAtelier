@@ -924,7 +924,13 @@ function startFestival() {
   };
   festivalRaf = requestAnimationFrame(anim);
 }
-listen("gift:festival", () => startFestival());
+listen("gift:festival", () => {
+  startFestival();
+  // The named fudemushi looks up from the ink to watch the falling stars — its name
+  // drifts above it for most of the festival, as if the stars know it by name. Reuses
+  // the shipped label machinery (CSS-eased, tracks the sprite); a no-op while unnamed.
+  if (buddyName) labelFrames = LABEL_DUR * 3; // ~9 s of the festival's 14 s drift
+});
 
 listen<CastFire>("cast:fire", (e) => {
   const m = e.payload;
