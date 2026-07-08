@@ -192,7 +192,7 @@ function drawHintStar(ctx: CanvasRenderingContext2D, w: number, h: number, ts: n
   const s = hintStar;
   const dt = Math.min(0.05, Math.max(0, (ts - s.last) / 1000)); s.last = ts;
   s.y -= 14 * dt * Math.max(1, uiScale); // rises a touch quicker than the slowest motes
-  if (s.y < -14) { hintStar = null; nextHintStarAt = ts + 180_000 + Math.random() * 120_000; return; }
+  if (s.y < -14) { hintStar = null; nextHintStarAt = ts + 300_000 + Math.random() * 240_000; return; } // 5–9 min: an occasional whisper
   const x = s.x + Math.sin(ts * 0.0003 + s.phase) * 14; // the motes' gentle sway
   const breathe = 0.62 + 0.28 * Math.sin(ts * 0.0006 + s.phase); // ≲0.1 Hz shimmer
   const edge = Math.min(1, (h + 12 - s.y) / (h * 0.08), s.y / (h * 0.1)); // ease in/out at the rims
@@ -1222,7 +1222,12 @@ const glyphCountEl = document.getElementById("glyphcount");
 const BASE_ELEMENTS = ["fire", "water", "wind", "earth"];
 function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
-  allDiscovered = BASE_ELEMENTS.every((k) => (discovered?.[k] ?? 0) > 0); // gates the hint star
+  const nowAll = BASE_ELEMENTS.every((k) => (discovered?.[k] ?? 0) > 0);
+  // On completing the set, wait a beat before the first whisper — so it feels discovered,
+  // not scheduled, and never spawns on the very next frame if the gate opens late in a
+  // session (after the boot timer has already elapsed).
+  if (nowAll && !allDiscovered) nextHintStarAt = performance.now() + 90_000 + Math.random() * 120_000;
+  allDiscovered = nowAll; // gates the hint star
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
 
