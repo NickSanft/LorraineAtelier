@@ -1014,7 +1014,8 @@ const moonCanvas = document.getElementById("moonCanvas") as HTMLCanvasElement | 
 let lastMoonKey = "";
 function updateMoonline(d: Date) {
   if (!moonCanvas) return;
-  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
+  // Key includes curMode so a Day/Night toggle re-inks the moon on the next tick (≤1 s).
+  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${curMode}`;
   if (key === lastMoonKey) return;
   lastMoonKey = key;
   const mctx = moonCanvas.getContext("2d");
@@ -1023,22 +1024,30 @@ function updateMoonline(d: Date) {
   const p = moonPhase(d);
   const waxing = p < 0.5;
   const c = Math.cos(p * 2 * Math.PI);
+  // Mode-aware inks (like drawBird): the clock backdrop is dark at night, near-white
+  // parchment (--c-halo) by day. Night → the LIT limb is bright moonlight on the dark
+  // disc. Day → the lit limb is DARK sumi ("magic is drawn") on the light clock, with
+  // only a whisper of a disc for the unlit side; otherwise the phase reads inverted.
+  const day = curMode === "day";
+  const litInk = day ? "#26200f" : "#e9dfc8";
+  const darkInk = day ? "rgba(60,44,18,.12)" : "rgba(16,13,26,.5)";
+  const rimInk = day ? "rgba(120,86,32,.6)" : "rgba(232,184,74,.55)";
   mctx.setTransform(1, 0, 0, 1, 0, 0);
   mctx.clearRect(0, 0, S, S);
   mctx.translate(S / 2, S / 2);
-  // the dark side: a faint disc so the unlit limb still reads as a body
+  // the unlit side: a faint disc so the moon's full extent still reads as a body
   mctx.beginPath(); mctx.arc(0, 0, R, 0, 6.2832);
-  mctx.fillStyle = "rgba(16,13,26,.5)"; mctx.fill();
+  mctx.fillStyle = darkInk; mctx.fill();
   // the lit side: limb arc (right while waxing, left while waning) + terminator ellipse
   mctx.beginPath();
   mctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, !waxing);
   mctx.ellipse(0, 0, Math.abs(c) * R, R, 0, Math.PI / 2, -Math.PI / 2, waxing === (c > 0));
   mctx.closePath();
-  mctx.fillStyle = "#e9dfc8"; // parchment moonlight
+  mctx.fillStyle = litInk;
   mctx.fill();
-  // a gold hairline rim, matching the clock's inkwork
+  // a hairline rim, matching the clock's inkwork
   mctx.beginPath(); mctx.arc(0, 0, R, 0, 6.2832);
-  mctx.strokeStyle = "rgba(232,184,74,.55)"; mctx.lineWidth = 2; mctx.stroke();
+  mctx.strokeStyle = rimInk; mctx.lineWidth = 2; mctx.stroke();
   mctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
