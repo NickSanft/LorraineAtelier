@@ -100,28 +100,67 @@ fn get_endpoint_volume() -> Option<IAudioEndpointVolume> {
     }
 }
 
-fn run_capture(app: &AppHandle) -> Result<(), String> {
+/// A live loopback stream bundle, kept together so it can be torn down and re-opened on
+/// the new default endpoint when Windows' default audio device changes mid-capture.
+struct LoopbackStream {
+    audio_client: wasapi::AudioClient,
+    capture_client: wasapi::AudioCaptureClient,
+    h_event: wasapi::Handle,
+    block_align: usize,
+    device_id: String,
+}
+
+/// Open the CURRENT default render endpoint in loopback and start its stream.
+fn open_default_loopback() -> Result<LoopbackStream, String> {
     use wasapi::*;
-
-    initialize_mta().ok().map_err(|e| format!("COM MTA init: {e}"))?;
-    let endpoint_vol = get_endpoint_volume();
     let device = get_default_device(&Direction::Render).map_err(|e| format!("default device: {e}"))?;
+    let device_id = device.get_id().unwrap_or_default(); // endpoint id, to detect a later default change
     let mut audio_client = device.get_iaudioclient().map_err(|e| format!("audio client: {e}"))?;
-
-    // Request f32 stereo @ 48k with conversion enabled — WASAPI resamples the
-    // device's mix format to this, so downstream parsing is fixed (8 bytes/frame).
+    // Request f32 stereo @ 48k with conversion enabled — WASAPI resamples the device's mix
+    // format to this, so downstream parsing is fixed (8 bytes/frame) across any endpoint.
     let format = WaveFormat::new(32, 32, &SampleType::Float, SR, 2, None);
     let block_align = format.get_blockalign() as usize; // 2ch * 4 bytes = 8
     let (_def_time, min_time) = audio_client.get_periods().map_err(|e| format!("periods: {e}"))?;
-    // Loopback: the device is a RENDER endpoint but we request Direction::Capture
-    // in Shared mode — wasapi-rs then auto-sets AUDCLNT_STREAMFLAGS_LOOPBACK (+
-    // EVENTCALLBACK). `true` = convert (accept our f32/48k format via resampling).
+    // Loopback: the device is a RENDER endpoint but we request Direction::Capture in Shared
+    // mode — wasapi-rs then auto-sets AUDCLNT_STREAMFLAGS_LOOPBACK (+ EVENTCALLBACK).
+    // `true` = convert (accept our f32/48k format via resampling).
     audio_client
         .initialize_client(&format, min_time, &Direction::Capture, &ShareMode::Shared, true)
         .map_err(|e| format!("initialize_client (loopback): {e}"))?;
     let h_event = audio_client.set_get_eventhandle().map_err(|e| format!("event handle: {e}"))?;
     let capture_client = audio_client.get_audiocaptureclient().map_err(|e| format!("capture client: {e}"))?;
     audio_client.start_stream().map_err(|e| format!("start_stream: {e}"))?;
+    Ok(LoopbackStream { audio_client, capture_client, h_event, block_align, device_id })
+}
+
+/// Re-open the default loopback after a device change/invalidation, retrying briefly
+/// across the transition window (the new default may take a beat to settle). Aborts
+/// immediately if capture was stopped meanwhile.
+fn reacquire_loopback() -> Result<LoopbackStream, String> {
+    let mut last = String::from("no default render device");
+    for _ in 0..12 {
+        if !CAPTURING.load(Ordering::Relaxed) {
+            return Err("stopped".into());
+        }
+        match open_default_loopback() {
+            Ok(s) => return Ok(s),
+            Err(e) => {
+                last = e;
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        }
+    }
+    Err(last)
+}
+
+fn run_capture(app: &AppHandle) -> Result<(), String> {
+    use wasapi::*;
+
+    initialize_mta().ok().map_err(|e| format!("COM MTA init: {e}"))?;
+    let mut endpoint_vol = get_endpoint_volume();
+    // The device/client bundle, re-openable so capture can follow a default-device change.
+    let mut stream = open_default_loopback()?;
+    let block_align = stream.block_align; // fixed 8 (2ch * 4B); identical across re-acquires
     println!("[lorraine] audio: loopback stream started (block_align={block_align})");
 
     let _ = app.emit("viz:source-changed", SourceChanged { attuned: true, reason: "attuned".into() });
@@ -146,14 +185,49 @@ fn run_capture(app: &AppHandle) -> Result<(), String> {
     let mut last_beat = Instant::now();
     let mut tempo = 0.35f32; // smoothed pace 0..1 (slow..fast); carried in bands[3]
     let mut last_emit = Instant::now();
+    let mut last_dev_check = Instant::now();
+    let mut need_reacquire = false;
+    let mut prime_flux = false;
 
     while CAPTURING.load(Ordering::Relaxed) {
-        if h_event.wait_for_event(1000).is_err() {
+        // Follow the default device if the user switches it mid-capture: the old loopback
+        // otherwise keeps running on the now-silent old endpoint (no error, just goes flat),
+        // or errors if that endpoint was unplugged. Poll the default endpoint id ~1/s; a
+        // read error (below) flags a re-acquire too.
+        if last_dev_check.elapsed().as_millis() >= 1000 {
+            last_dev_check = Instant::now();
+            if let Ok(d) = get_default_device(&Direction::Render) {
+                if d.get_id().map(|id| id != stream.device_id).unwrap_or(false) {
+                    need_reacquire = true;
+                }
+            }
+        }
+        if need_reacquire {
+            need_reacquire = false;
+            let _ = stream.audio_client.stop_stream();
+            stream = reacquire_loopback()?; // ends the thread (→ attuned:false) only if no device returns for ~3 s
+            endpoint_vol = get_endpoint_volume(); // mute-state source follows the new default
+            byte_queue.clear();
+            window.clear();
+            for m in prev_mag.iter_mut() {
+                *m = 0.0;
+            }
+            prime_flux = true; // first frame's flux is a stale-magnitude jump, not a real onset
+            println!("[lorraine] audio: re-acquired default loopback (id={})", stream.device_id);
+            continue;
+        }
+
+        if stream.h_event.wait_for_event(1000).is_err() {
             continue; // periodic timeout while silent — keep looping until stopped
         }
-        capture_client
+        if stream
+            .capture_client
             .read_from_device_to_deque(&mut byte_queue)
-            .map_err(|e| format!("read: {e}"))?;
+            .is_err()
+        {
+            need_reacquire = true; // old endpoint invalidated (unplugged) → follow the new default
+            continue;
+        }
 
         // Parse f32 stereo frames → mono, into the sliding window.
         while byte_queue.len() >= block_align {
@@ -233,10 +307,16 @@ fn run_capture(app: &AppHandle) -> Result<(), String> {
             prev_mag[i] = m;
         }
         flux_mean = flux_mean * 0.98 + flux * 0.02;
-        let beat = !gated
+        let mut beat = !gated
             && flux > flux_mean * 1.8
             && flux > 1e-3
             && last_beat.elapsed().as_millis() > 220;
+        if prime_flux {
+            // First analysis frame after a re-acquire: prev_mag was zeroed, so the flux is
+            // a full-magnitude jump, not a real onset — prime it without firing a beat.
+            beat = false;
+            prime_flux = false;
+        }
         if beat {
             // inter-beat interval → an instantaneous pace, eased into `tempo`.
             let interval = last_beat.elapsed().as_millis() as f32;
@@ -272,6 +352,6 @@ fn run_capture(app: &AppHandle) -> Result<(), String> {
         let _ = app.emit("viz:bands", frame);
     }
 
-    let _ = audio_client.stop_stream();
+    let _ = stream.audio_client.stop_stream();
     Ok(())
 }
