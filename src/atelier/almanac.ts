@@ -2,25 +2,22 @@
 // deterministically from the date (no network, no state, no Rust). Pure + unit-tested
 // like palette.ts.
 //
-// The lines are drawn from Witch Hat Atelier itself (Kamome Shirahama; volume noted),
-// with the atelier's own tagline folded in. GIVER'S NOTE: salt this list freely with
-// private lines in her voice — the pick is index-stable per date, so editing the list
-// only reshuffles which day shows which line.
+// Every line is drawn verbatim from Witch Hat Atelier (Kamome Shirahama; volume noted).
+// GIVER'S NOTE: salt this list freely with private lines in her voice — the pick is
+// index-stable per date, so editing the list only reshuffles which day shows which line.
 
 export const ALMANAC_LINES: readonly string[] = [
   "Understanding opens the way to mastery.", // Vol. 1
   "One's ideas are just as crucial to magic as one's skill with the pen.", // Vol. 2
-  "There is no greater teacher than life itself.", // Vol. 2
+  "There's no greater teacher than life itself.", // Vol. 2
   "Everyone's unsteady when first using a new tool.", // Vol. 1
   "Soon you'll be full of confidence, bounding as you please.", // Vol. 1
   "Teachings cannot take root if they fail to captivate the student.", // Vol. 6 — Beldaruit the Wise
   "Loveliness is the sustenance of life!", // Vol. 6
-  "Ask what you can do to make it work. That's a big step forward.", // Vol. 6 (lightly compressed)
-  "Magic exists to make people happy.",
-  "Being upset when you're not able to do something is normal. That's what motivates you to grow.",
-  "Hands that handle new tools are always clumsy.",
+  "You're asking what you can do to make it work. That's a big step forward.", // Vol. 6
+  "Magic exists to make people happy.", // Vol. 3
+  "Being upset when you're not able to do something is normal. That's what motivates you to grow.", // Vol. 4
   "Even the greatest of witches is helpless in the grip of a fluffy bed…", // Vol. 2
-  "Magic is not spoken here — it is drawn.", // the Atelier's own line
 ];
 
 /** 1-based day of the year for a local date (Jan 1 → 1). Computed from calendar
