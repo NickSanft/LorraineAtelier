@@ -1225,31 +1225,50 @@ function updateGlyphCount(discovered?: Record<string, number>) {
 const milestoneEl = document.getElementById("milestoneMsg");
 let milestoneShown = 0;
 let milestoneTimer = 0;
+let lastTotal = -1; // lifetime-cast total at the previous check; -1 until the first settings sync
 const MILESTONES: [number, string][] = [
   [10, "Ten seals inscribed — the pen grows sure in your hand."],
   [50, "Fifty seals — drawn without looking. The hand remembers."],
   [100, "One hundred seals, each by your own hand."],
   [365, "A seal for every day of a year."],
 ];
+function sumCasts(discovered?: Record<string, number>): number {
+  let t = 0; if (discovered) for (const k in discovered) t += discovered[k] || 0; return t;
+}
+function highestCrossed(total: number): number {
+  let m = 0; for (const [n] of MILESTONES) if (total >= n) m = n; return m;
+}
+// Seed the milestone gates from the initial settings WITHOUT celebrating retroactively:
+// an install that already has lifetime casts beyond the persisted milestone (e.g. the
+// dev's own machine) silently catches up rather than flashing a stale, wrong-count line.
+function seedMilestones(discovered?: Record<string, number>) {
+  lastTotal = sumCasts(discovered);
+  const caught = highestCrossed(lastTotal);
+  if (caught > milestoneShown) { milestoneShown = caught; invoke("set_milestone_shown", { value: caught }).catch(() => {}); }
+}
 function checkCastMilestone(discovered?: Record<string, number>) {
   if (isPrimary === false || !milestoneEl) return;
-  const d = discovered || {};
-  let total = 0;
-  for (const k in d) total += d[k] || 0;
+  const total = sumCasts(discovered);
+  // Only celebrate a milestone the total actually just CROSSED. tomes:changed also fires
+  // with no new cast (mark_secret_found, the birthday unlock) — ignore those — and never
+  // retroactively (lastTotal is seeded from the first settings sync).
+  if (lastTotal < 0) { seedMilestones(discovered); return; }
+  if (total <= lastTotal) { lastTotal = total; return; }
+  lastTotal = total;
   let reached = 0, line = "";
   for (const [n, text] of MILESTONES) if (total >= n && n > milestoneShown) { reached = n; line = text; }
   if (!reached) return;
-  milestoneShown = reached;
-  invoke("set_milestone_shown", { value: reached }).catch(() => {});
+  milestoneShown = reached; // guard in-memory now so a second cast within the delay can't re-schedule
   setTimeout(() => {
     milestoneEl.textContent = line;
     milestoneEl.style.opacity = "1";
+    invoke("set_milestone_shown", { value: reached }).catch(() => {}); // persist at show-time (not before)
     clearTimeout(milestoneTimer);
     milestoneTimer = window.setTimeout(() => { milestoneEl.style.opacity = "0"; }, 7500);
   }, 2600);
 }
 interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; milestoneShown?: number; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; seedMilestones(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
