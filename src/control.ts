@@ -37,6 +37,7 @@ const colorblindBtn = document.getElementById("colorblind") as HTMLButtonElement
 const startupBtn = document.getElementById("startup") as HTMLButtonElement;
 const frameRateSel = document.getElementById("frameRate") as HTMLSelectElement;
 const ringSpeedSel = document.getElementById("ringSpeed") as HTMLSelectElement;
+const glowSel = document.getElementById("glowIntensity") as HTMLSelectElement;
 const primaryOnlyBtn = document.getElementById("primaryOnly") as HTMLButtonElement;
 const buddyEnabledBtn = document.getElementById("buddyEnabled") as HTMLButtonElement;
 const quietToggleBtn = document.getElementById("quietToggle") as HTMLButtonElement;
@@ -116,6 +117,7 @@ interface SettingsDto {
   runAtStartup: boolean;
   frameRate: number;
   ringSpeed: number;
+  glowIntensity: number;
   primaryOnly: boolean;
   buddyEnabled: boolean;
   quietHoursEnabled: boolean;
@@ -230,6 +232,7 @@ async function main() {
     if (s.quietEnd) quietEndInput.value = s.quietEnd;
     frameRateSel.value = String(s.frameRate ?? 30);
     ringSpeedSel.value = String(s.ringSpeed ?? 0.5);
+    glowSel.value = String(s.glowIntensity ?? 1);
     buildBindings(s.mappings || {});
     buildTomes(s);
     if (s.firstRun) {
@@ -291,6 +294,11 @@ async function main() {
     const speed = parseFloat(ringSpeedSel.value) || 1;
     await invoke("set_ring_speed", { speed });
     append(`ring speed → ${ringSpeedSel.options[ringSpeedSel.selectedIndex].text}`);
+  });
+  glowSel.addEventListener("change", async () => {
+    const intensity = parseFloat(glowSel.value);
+    await invoke("set_glow_intensity", { intensity: Number.isFinite(intensity) ? intensity : 1 });
+    append(`glow → ${glowSel.options[glowSel.selectedIndex].text}`);
   });
   primaryOnlyBtn.addEventListener("click", async () => {
     primaryOnlyOn = !primaryOnlyOn;
@@ -367,6 +375,7 @@ async function main() {
       quietEndInput.value = s.quietEnd || "07:00";
       frameRateSel.value = String(s.frameRate ?? 30);
       ringSpeedSel.value = String(s.ringSpeed ?? 0.5);
+      glowSel.value = String(s.glowIntensity ?? 1);
       buddySpriteInput.value = s.buddySprite || "";
       renderMode(); renderPause(); renderColorblind(); renderPrimaryOnly(); renderBuddyEnabled(); renderQuiet();
     } catch { /* */ }

@@ -97,6 +97,7 @@ pub struct Settings {
     pub quiet_start: String,       // "HH:MM" local — quiet window start
     pub quiet_end: String,         // "HH:MM" local — quiet window end (may wrap past midnight)
     pub ring_speed: f32,           // visualizer seal rotation speed (1.0 original, 0.5 half, 0.25 quarter)
+    pub glow_intensity: f32,       // audio-reactive bloom scale (0 = off, 1.0 default, up to ~1.4 vivid)
 }
 
 impl Default for Settings {
@@ -133,6 +134,7 @@ impl Default for Settings {
             quiet_start: "22:00".into(),
             quiet_end: "07:00".into(),
             ring_speed: 0.5, // gift default: the gentler half-speed turn reads as calmer/dreamier
+            glow_intensity: 1.0, // gift default: the current (already photosensitivity-vetted) bloom
         }
     }
 }
@@ -266,6 +268,7 @@ pub fn restore_defaults() -> Settings {
         s.quiet_start = d.quiet_start;
         s.quiet_end = d.quiet_end;
         s.ring_speed = d.ring_speed;
+        s.glow_intensity = d.glow_intensity;
     }
     save();
     get()
@@ -343,6 +346,11 @@ pub fn set_quiet_hours(enabled: bool, start: String, end: String) {
 
 pub fn set_ring_speed(v: f32) {
     store().lock().unwrap_or_else(|e| e.into_inner()).ring_speed = v;
+    save();
+}
+
+pub fn set_glow_intensity(v: f32) {
+    store().lock().unwrap_or_else(|e| e.into_inner()).glow_intensity = v;
     save();
 }
 

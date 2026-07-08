@@ -1084,6 +1084,7 @@ let loopRunning = false;
 let quietActive = false; // quiet-hours "embers" dim active
 let quietLevel = 0; // eased 0..1; gentles the seal/motes/glow reactivity at night
 let ringSpeed = 0.5; // seal ring rotation multiplier (1 / 0.5 / 0.25; settings:ringspeed) — half-speed default
+let glowIntensity = 1; // scales the audio-reactive bloom (0 = off .. 1 default .. 1.4 vivid; settings:glowintensity)
 // Drive the ambient loop with setTimeout, NOT requestAnimationFrame. An active rAF
 // loop keeps Chromium's compositor in continuous "animating" mode, so it PRESENTS
 // every vsync (e.g. 175 Hz) even though we only redraw at 30 Hz — confirmed via
@@ -1112,7 +1113,9 @@ function drawFrame(ts: number) {
   // once the rounded value settles (a still/quiet scene costs nothing here).
   const glowTarget = parseFloat(glowOpacity({ bass: sealState.bass, mid: sealState.mid, high: sealState.high }, pal));
   glowVal += (glowTarget - glowVal) * 0.07;
-  const glowStr = glowVal.toFixed(3);
+  // Scale by the user's glow-intensity setting (0 turns the bloom off entirely). The easing
+  // above is unchanged, so brightness still shifts gradually at every level.
+  const glowStr = (glowVal * glowIntensity).toFixed(3);
   if (glowStr !== lastGlowStr) { lastGlowStr = glowStr; glow.style.opacity = glowStr; }
 }
 
@@ -1283,11 +1286,12 @@ function checkCastMilestone(discovered?: Record<string, number>) {
     milestoneTimer = window.setTimeout(() => { milestoneEl.style.opacity = "0"; }, 7500);
   }, 2600);
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; milestoneShown?: number; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; seedMilestones(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; milestoneShown?: number; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number; glowIntensity?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; seedMilestones(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; if (typeof s.glowIntensity === "number") glowIntensity = s.glowIntensity; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
+listen<number>("settings:glowintensity", (e) => { glowIntensity = Number(e.payload); if (!(glowIntensity >= 0)) glowIntensity = 1; });
 listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; updateLoopState(); });
 // Monitor powered off / session locked → pause the render loop; on / unlocked → resume.
 // The last frame stays on the (now-off or hidden) canvas, so resuming just eases — no flash.

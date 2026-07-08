@@ -1575,6 +1575,16 @@ fn set_ring_speed(app: AppHandle, speed: f32) -> String {
     format!("ring speed -> {s}")
 }
 
+/// Set the audio-reactive glow (bloom) intensity: 0 = off, 1.0 = default, up to 1.4.
+/// Persisted + broadcast so the wallpaper scales its glow live.
+#[tauri::command]
+fn set_glow_intensity(app: AppHandle, intensity: f32) -> String {
+    let v = intensity.clamp(0.0, 1.4);
+    settings::set_glow_intensity(v);
+    let _ = app.emit("settings:glowintensity", v);
+    format!("glow intensity -> {v}")
+}
+
 /// Restore the cosmetic scene-tuning settings to their gift defaults; keepsakes (tomes,
 /// the named fudemushi, secret-found, spell bindings, widget layout, autostart) are
 /// preserved. Re-broadcasts every live setting so all surfaces update without a restart.
@@ -1584,6 +1594,7 @@ fn restore_defaults(app: AppHandle) -> String {
     let _ = app.emit("settings:mode", s.mode.clone());
     let _ = app.emit("settings:framerate", s.frame_rate);
     let _ = app.emit("settings:ringspeed", s.ring_speed);
+    let _ = app.emit("settings:glowintensity", s.glow_intensity);
     let _ = app.emit("settings:primaryonly", s.primary_only);
     let _ = app.emit("settings:colorblind", s.colorblind);
     let _ = app.emit("settings:buddyenabled", s.buddy_enabled);
@@ -1867,6 +1878,7 @@ pub fn run() {
             preview_quiet,
             preview_lanterns,
             set_ring_speed,
+            set_glow_intensity,
             set_buddy_revealed,
             set_buddy_name,
             preview_buddy_birth,
