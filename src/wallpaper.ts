@@ -553,7 +553,7 @@ function applyBuddySprite(src?: string) {
   applyBuddyInkMode();
 }
 listen<string>("settings:buddySprite", (e) => applyBuddySprite(e.payload));
-listen<boolean>("settings:buddyenabled", (e) => { if (buddyEl) buddyEl.style.display = e.payload ? "" : "none"; });
+listen<boolean>("settings:buddyenabled", (e) => { if (buddyEl) buddyEl.style.display = e.payload ? "" : "none"; if (!e.payload) labelFrames = 0; /* clear any pending name drift when the buddy is hidden */ });
 listen("buddy:born", () => { bornFrames = BORN_DUR; }); // the fudemushi hatches (first cast / dev preview)
 listen<string>("settings:buddyname", (e) => { buddyName = (e.payload || "").trim(); if (buddyName) labelFrames = LABEL_DUR; }); // (re)named → drift the label
 
@@ -929,8 +929,11 @@ listen("gift:festival", () => {
   startFestival();
   // The named fudemushi looks up from the ink to watch the falling stars — its name
   // drifts above it for most of the festival, as if the stars know it by name. Reuses
-  // the shipped label machinery (CSS-eased, tracks the sprite); a no-op while unnamed.
-  if (buddyName) labelFrames = LABEL_DUR * 3; // ~9 s of the festival's 14 s drift
+  // the shipped label machinery (CSS-eased, tracks the sprite). Only when the buddy is
+  // actually present: labelFrames only decays inside the buddy listener (which is quiet
+  // while the buddy is disabled), so arming it on a hidden buddy would freeze the frame
+  // count and resurface the name whenever the buddy was later re-enabled.
+  if (buddyName && buddyEl && buddyEl.style.display !== "none") labelFrames = LABEL_DUR * 3;
 });
 
 listen<CastFire>("cast:fire", (e) => {
