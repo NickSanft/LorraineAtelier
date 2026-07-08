@@ -937,13 +937,17 @@ listen<CastFire>("cast:fire", (e) => {
   const m = e.payload;
   updateDockDisplay(curMode, m.ink); // reflect spent ink in the dock gauge
   startBloom(m);
-  // Seed a spell ember at the bloom site (centre of this monitor): the cast's warmth
-  // lingers in the room after the bloom fades.
+  // Seed a spell ember at the bloom site: the cast's warmth lingers after the bloom fades.
+  // Only where the render loop actually runs (drawEmbers renders AND expires them) — a
+  // static secondary under "primary only" would otherwise stockpile undrawn embers that
+  // pop in if it later starts animating. Spread across the mid-scene so a casting spree
+  // scatters instead of stacking an additive blob at one point.
+  if (!loopRunning) return;
   const c = ambient as CV;
   const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
   if (embers.length >= EMBER_MAX) embers.shift();
   embers.push({
-    x: w * (0.5 + (Math.random() - 0.5) * 0.08), y0: h * 0.56,
+    x: w * (0.5 + (Math.random() - 0.5) * 0.4), y0: h * (0.5 + Math.random() * 0.12),
     rgb: hexRgbPrefix(m.hue), sigil: (m.sigil as Sigil) || "circle",
     born: performance.now(), phase: Math.random() * 6.28,
     r: (16 + Math.random() * 8) * Math.max(1, uiScale),
@@ -1127,6 +1131,7 @@ function startLoop() {
 function stopLoop() {
   loopGen++; // any in-flight step sees the gen change and stops
   loopRunning = false;
+  embers = []; // going static: drop transient embers so none resurface mid-life on restart
 }
 // A monitor animates unless it's a KNOWN secondary while "primary only" is on. A
 // static (no-damage) webview produces ~0 compositor presents → ~0 GPU, while still
