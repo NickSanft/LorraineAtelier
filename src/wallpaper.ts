@@ -206,6 +206,56 @@ function drawHintStar(ctx: CanvasRenderingContext2D, w: number, h: number, ts: n
   ctx.restore();
 }
 
+// ---- Spell Embers: every cast leaves a lingering warm trace in the room ----
+// After a cast's bloom, one ember-lantern tinted by the element's hue (the element's
+// glyph faintly inked inside) rises slowly from the bloom site over ~90 s, breathing
+// like the floatglow lanterns (~0.06 Hz), then fades — spent conjuring-ink inhabiting
+// the scene. Seeded purely off the existing cast:fire broadcast; capped at 8.
+interface Ember { x: number; y0: number; rgb: string; sigil: Sigil; born: number; phase: number; r: number }
+let embers: Ember[] = [];
+const EMBER_DUR = 90_000;
+const EMBER_MAX = 8;
+function hexRgbPrefix(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+  if (!m) return "rgba(47,214,198,"; // teal fallback
+  const v = parseInt(m[1], 16);
+  return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},`;
+}
+function drawEmbers(ctx: CanvasRenderingContext2D, w: number, h: number, ts: number) {
+  if (!embers.length) return;
+  let expired = false;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter"; // reads as warm light, like the lanterns
+  for (const e of embers) {
+    const age = ts - e.born;
+    const p = age / EMBER_DUR;
+    if (p >= 1) { expired = true; continue; }
+    const rise = (1 - Math.pow(1 - p, 2)) * h * 0.28; // decelerating upward drift (cooling)
+    const x = e.x + Math.sin(ts * 0.00012 + e.phase) * w * 0.015;
+    const y = e.y0 - rise;
+    const breathe = 0.78 + 0.22 * Math.sin(ts * 0.0004 + e.phase); // ~0.06 Hz, lantern-class
+    const a = Math.min(1, age / 4000) * (p > 0.8 ? (1 - p) / 0.2 : 1) * breathe;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, e.r);
+    g.addColorStop(0, e.rgb + (0.34 * a).toFixed(3) + ")");
+    g.addColorStop(0.45, e.rgb + (0.16 * a).toFixed(3) + ")");
+    g.addColorStop(1, e.rgb + "0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, e.r, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = `rgba(255,238,205,${(0.4 * a).toFixed(3)})`; // bright ember core
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 6.2832); ctx.fill();
+    // the element's glyph, faintly inked inside the glow (static — stillness is canon)
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = e.rgb + (0.3 * a).toFixed(3) + ")";
+    ctx.lineWidth = 1.2;
+    drawGlyphPath(ctx, e.sigil, e.r * 0.4);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+  if (expired) embers = embers.filter((e) => ts - e.born < EMBER_DUR);
+}
+
 function drawAmbientFrame(ts: number, b: Bands) {
   const c = ambient as CV;
   if (!motes.length) sizeAll();
@@ -215,6 +265,7 @@ function drawAmbientFrame(ts: number, b: Bands) {
   const ctx = c.getContext("2d")!;
   drawAmbient(ctx, motes, w, h, ts, b, pal);
   drawLanterns(ctx, lanterns, w, h, ts, duskFactor()); // warm orbs at dusk
+  drawEmbers(ctx, w, h, ts); // spent conjuring-ink from recent casts
   drawHintStar(ctx, w, h, ts); // the fifth seal's whisper (gated; usually a no-op)
 }
 
@@ -878,6 +929,17 @@ listen<CastFire>("cast:fire", (e) => {
   const m = e.payload;
   updateDockDisplay(curMode, m.ink); // reflect spent ink in the dock gauge
   startBloom(m);
+  // Seed a spell ember at the bloom site (centre of this monitor): the cast's warmth
+  // lingers in the room after the bloom fades.
+  const c = ambient as CV;
+  const w = c._cssw || window.innerWidth, h = c._cssh || window.innerHeight;
+  if (embers.length >= EMBER_MAX) embers.shift();
+  embers.push({
+    x: w * (0.5 + (Math.random() - 0.5) * 0.08), y0: h * 0.56,
+    rgb: hexRgbPrefix(m.hue), sigil: (m.sigil as Sigil) || "circle",
+    born: performance.now(), phase: Math.random() * 6.28,
+    r: (16 + Math.random() * 8) * Math.max(1, uiScale),
+  });
 });
 
 // The score-tiered / dismiss flavour, surfaced as a gentle parchment caption near the
