@@ -18,6 +18,7 @@ import type { Bands } from "./atelier/audio/generative";
 import { currentBands, currentTempo, onBandFrame, setAttuned, takeBeat, type BandFrameMsg } from "./atelier/audio/source";
 import { makeMotes, drawAmbient, makeLanterns, drawLanterns, type Mote } from "./atelier/draw/ambient";
 import { pickLine } from "./atelier/almanac";
+import { moonPhase } from "./atelier/moon";
 import { attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
 import { glowOpacity } from "./atelier/draw/glow";
@@ -1004,6 +1005,43 @@ function updateAlmanac(d: Date) {
   }
 }
 
+// ---- Moonline: the real moon phase inked into the magic-circle clock ----
+// Redrawn at most once an hour off updateClock's tick. The lit region is one path:
+// the lit limb's arc plus the terminator ellipse (rx = |cos 2πp|·R), so crescent →
+// quarter → gibbous → full all render from the same geometry. Fixed parchment/gold
+// inks read on both modes; effectively a static ornament (photosensitivity-safe).
+const moonCanvas = document.getElementById("moonCanvas") as HTMLCanvasElement | null;
+let lastMoonKey = "";
+function updateMoonline(d: Date) {
+  if (!moonCanvas) return;
+  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
+  if (key === lastMoonKey) return;
+  lastMoonKey = key;
+  const mctx = moonCanvas.getContext("2d");
+  if (!mctx) return;
+  const S = moonCanvas.width, R = S / 2 - 4;
+  const p = moonPhase(d);
+  const waxing = p < 0.5;
+  const c = Math.cos(p * 2 * Math.PI);
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
+  mctx.clearRect(0, 0, S, S);
+  mctx.translate(S / 2, S / 2);
+  // the dark side: a faint disc so the unlit limb still reads as a body
+  mctx.beginPath(); mctx.arc(0, 0, R, 0, 6.2832);
+  mctx.fillStyle = "rgba(16,13,26,.5)"; mctx.fill();
+  // the lit side: limb arc (right while waxing, left while waning) + terminator ellipse
+  mctx.beginPath();
+  mctx.arc(0, 0, R, -Math.PI / 2, Math.PI / 2, !waxing);
+  mctx.ellipse(0, 0, Math.abs(c) * R, R, 0, Math.PI / 2, -Math.PI / 2, waxing === (c > 0));
+  mctx.closePath();
+  mctx.fillStyle = "#e9dfc8"; // parchment moonlight
+  mctx.fill();
+  // a gold hairline rim, matching the clock's inkwork
+  mctx.beginPath(); mctx.arc(0, 0, R, 0, 6.2832);
+  mctx.strokeStyle = "rgba(232,184,74,.55)"; mctx.lineWidth = 2; mctx.stroke();
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
 function updateClock() {
   const d = new Date();
   const hh = d.getHours();
@@ -1013,6 +1051,7 @@ function updateClock() {
   elAmpm.textContent = hh >= 12 ? "PM" : "AM";
   elDate.textContent = (MONTHS[d.getMonth()] + " " + d.getDate()).toUpperCase();
   updateAlmanac(d);
+  updateMoonline(d);
 }
 
 let lastTs = 0;

@@ -107,6 +107,10 @@
             <line x1="62" y1="62" x2="238" y2="238" /><line x1="238" y1="62" x2="62" y2="238" />
           </g>
         </svg>
+        <!-- Moonline: the real moon phase, inked hourly (src/atelier/moon.ts) — a quiet
+             almanac ornament between the △ mark and the hour. 3× backing store so it
+             stays crisp under the clock's ui-scale transform. -->
+        <canvas id="moonCanvas" width="72" height="72" style="position:absolute;left:50%;top:46px;width:24px;height:24px;margin-left:-12px;opacity:.85"></canvas>
         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
           <div id="weekday" style="font-family:'EB Garamond',serif;font-size:11px;letter-spacing:.36em;text-transform:uppercase;color:var(--c-soft);margin-bottom:2px;text-shadow:0 0 12px var(--c-halo)"></div>
           <div style="display:flex;align-items:baseline;gap:6px;font-family:'EB Garamond',serif;font-weight:500;line-height:1;color:var(--c-text);text-shadow:0 0 18px var(--c-halo),0 1px 3px var(--c-halo)">
