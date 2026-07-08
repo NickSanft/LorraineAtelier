@@ -375,7 +375,7 @@ async function main() {
 
   // ---- Widget layout editor: drag chips in a monitor preview + a size slider ----
   interface WPos { x: number; y: number; scale: number; vertical?: boolean }
-  const LAYOUT_DEFAULTS: Record<string, { x: number; y: number }> = { clock: { x: 3, y: 7 }, seal: { x: 4, y: 55 }, dock: { x: 28, y: 86 }, titlePill: { x: 3, y: 2 }, glyphsPill: { x: 68, y: 2 } };
+  const LAYOUT_DEFAULTS: Record<string, { x: number; y: number }> = { clock: { x: 3, y: 7 }, seal: { x: 4, y: 55 }, dock: { x: 28, y: 86 }, titlePill: { x: 3, y: 2 }, glyphsPill: { x: 68, y: 2 }, almanacPill: { x: 60, y: 9 } };
   const stage = document.getElementById("layoutStage")!;
   const selNameEl = document.getElementById("selWidgetName")!;
   const selScaleEl = document.getElementById("selWidgetScale") as HTMLInputElement;

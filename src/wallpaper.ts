@@ -434,13 +434,14 @@ const topStripEl = document.getElementById("topstrip");
 const dockEl = document.getElementById("dock");
 const titlePillEl = document.getElementById("titlePill");
 const glyphsPillEl = document.getElementById("glyphsPill");
+const almanacEl = document.getElementById("almanacPill"); // also a layout widget (declared here so LAYOUT_WIDGETS can include it)
 let isPrimary: boolean | null = null;
 
 // ---- widget layout customization (control window edits {x%, y%, scale} per widget) ----
 // An override repositions a widget (top-left anchor, % of the work area) and scales it
 // on top of the auto monitor-height ui-scale. No override = its built-in placement.
 interface WidgetPos { x: number; y: number; scale: number; vertical?: boolean }
-const LAYOUT_WIDGETS: Record<string, HTMLElement | null> = { clock: clockEl, seal: sealEl, dock: dockEl, titlePill: titlePillEl, glyphsPill: glyphsPillEl };
+const LAYOUT_WIDGETS: Record<string, HTMLElement | null> = { clock: clockEl, seal: sealEl, dock: dockEl, titlePill: titlePillEl, glyphsPill: glyphsPillEl, almanacPill: almanacEl };
 const widgetOrigStyle: Record<string, string> = {};
 for (const [name, el] of Object.entries(LAYOUT_WIDGETS)) if (el) widgetOrigStyle[name] = el.getAttribute("style") || "";
 let widgetLayout: Record<string, WidgetPos> = {};
@@ -994,8 +995,10 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 // ---- The Almanac of Small Spells: one Witch-Hat line a day in the top strip ----
 // Deterministic by date (src/atelier/almanac.ts); crossfades at the day rollover,
-// which updateClock's 1 s tick catches. No Rust, no persistence.
-const almanacEl = document.getElementById("almanacPill");
+// which updateClock's 1 s tick catches. No Rust, no persistence. (almanacEl is declared
+// up with the other LAYOUT_WIDGETS so the control panel can move/scale it.)
+// Visibility is a `.shown` CLASS, not inline opacity, so it survives the widget-layout
+// reset path (setAttribute("style", original) would otherwise re-hide the pill).
 let almanacDayKey = "";
 function updateAlmanac(d: Date) {
   if (!almanacEl) return;
@@ -1004,11 +1007,11 @@ function updateAlmanac(d: Date) {
   almanacDayKey = key;
   const line = pickLine(d);
   if (almanacEl.textContent) {
-    almanacEl.style.opacity = "0"; // gentle crossfade at midnight
-    setTimeout(() => { almanacEl.textContent = line; almanacEl.style.opacity = "1"; }, 950);
+    almanacEl.classList.remove("shown"); // gentle crossfade at midnight
+    setTimeout(() => { almanacEl!.textContent = line; almanacEl!.classList.add("shown"); }, 950);
   } else {
     almanacEl.textContent = line;
-    almanacEl.style.opacity = "1";
+    almanacEl.classList.add("shown");
   }
 }
 
