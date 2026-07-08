@@ -155,6 +155,57 @@ function duskFactor(): number {
   if (m >= dawn && m < dawnEnd) return 1 - (m - dawn) / 60; // dawn ramp down
   return 0; // daytime
 }
+// ---- "a star among the motes" (the fifth seal's whisper) ----
+// Once all four elements are inscribed but the secret pentacle is still unfound, an
+// occasional lone mote drifts by as a tiny ✦ outline — the world's own margin-note
+// toward the hidden seal ("a seal written in no tome"). It retires forever the moment
+// the secret is found (tomes:changed re-syncs the flags). Primary monitor only, and the
+// same slow drift / gentle breathe profile as the ambient motes (photosensitivity-safe).
+let secretFound = false;
+let allDiscovered = false;
+interface HintStar { x: number; y: number; r: number; phase: number; last: number }
+let hintStar: HintStar | null = null;
+let nextHintStarAt = 120_000 + Math.random() * 120_000; // first whisper ~2–4 min after boot
+function starPath(ctx: CanvasRenderingContext2D, x: number, y: number, R: number) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rad = i % 2 === 0 ? R : R * 0.45;
+    const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+function drawHintStar(ctx: CanvasRenderingContext2D, w: number, h: number, ts: number) {
+  if (!allDiscovered || secretFound || isPrimary === false) { hintStar = null; return; }
+  if (!hintStar) {
+    if (ts < nextHintStarAt) return;
+    hintStar = {
+      x: w * (0.12 + Math.random() * 0.76), y: h + 12,
+      r: (5 + Math.random() * 2) * Math.max(1, uiScale),
+      phase: Math.random() * 6.28, last: ts,
+    };
+    return;
+  }
+  const s = hintStar;
+  const dt = Math.min(0.05, Math.max(0, (ts - s.last) / 1000)); s.last = ts;
+  s.y -= 14 * dt * Math.max(1, uiScale); // rises a touch quicker than the slowest motes
+  if (s.y < -14) { hintStar = null; nextHintStarAt = ts + 180_000 + Math.random() * 120_000; return; }
+  const x = s.x + Math.sin(ts * 0.0003 + s.phase) * 14; // the motes' gentle sway
+  const breathe = 0.62 + 0.28 * Math.sin(ts * 0.0006 + s.phase); // ≲0.1 Hz shimmer
+  const edge = Math.min(1, (h + 12 - s.y) / (h * 0.08), s.y / (h * 0.1)); // ease in/out at the rims
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 0.55 * breathe * edge);
+  ctx.strokeStyle = pal.gold;
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = "round";
+  ctx.shadowColor = pal.gold;
+  ctx.shadowBlur = 8;
+  starPath(ctx, x, s.y, s.r);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawAmbientFrame(ts: number, b: Bands) {
   const c = ambient as CV;
   if (!motes.length) sizeAll();
@@ -164,6 +215,7 @@ function drawAmbientFrame(ts: number, b: Bands) {
   const ctx = c.getContext("2d")!;
   drawAmbient(ctx, motes, w, h, ts, b, pal);
   drawLanterns(ctx, lanterns, w, h, ts, duskFactor()); // warm orbs at dusk
+  drawHintStar(ctx, w, h, ts); // the fifth seal's whisper (gated; usually a no-op)
 }
 
 const sealState = makeSealState();
@@ -384,7 +436,11 @@ function scheduleSizes() {
 // This webview's own label. Rust emits each monitor's buddy message to its slot
 // label AND stamps the label into the payload; we act only on our own (Tauri 2.11
 // `EventTarget::Any` listeners otherwise receive every window's emit).
-const selfLabel = getCurrentWebviewWindow().label;
+// Outside Tauri (a plain-browser dev preview) getCurrentWebviewWindow() THROWS at
+// module scope, aborting the whole module (no sizeAll/startLoop → a dead scene) —
+// fall back to a stub label so the scene renders in a browser too.
+let selfLabel = "preview";
+try { selfLabel = getCurrentWebviewWindow().label; } catch { /* browser preview */ }
 if (buddyEl) buddyEl.style.transformOrigin = "44px 22px"; // sprite centre, for scaling
 if (buddyEyes) buddyEyes.style.transformOrigin = "center 14px"; // new sprite's eye line
 
@@ -1019,10 +1075,11 @@ const glyphCountEl = document.getElementById("glyphcount");
 const BASE_ELEMENTS = ["fire", "water", "wind", "earth"];
 function updateGlyphCount(discovered?: Record<string, number>) {
   if (glyphCountEl) glyphCountEl.textContent = String(BASE_ELEMENTS.filter((k) => (discovered?.[k] ?? 0) > 0).length);
+  allDiscovered = BASE_ELEMENTS.every((k) => (discovered?.[k] ?? 0) > 0); // gates the hint star
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
@@ -1031,8 +1088,8 @@ listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; upda
 // The last frame stays on the (now-off or hidden) canvas, so resuming just eases — no flash.
 listen<boolean>("power:display", (e) => { displayOn = e.payload !== false; updateLoopState(); });
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
-// A new cast/secret updates the inscribed count.
-listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => updateGlyphCount(s?.discovered)).catch(() => {}); });
+// A new cast/secret updates the inscribed count (and the hint-star gates).
+listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => { updateGlyphCount(s?.discovered); secretFound = !!s?.secretFound; }).catch(() => {}); });
 sizeAll();
 scheduleHitRects(); // initial publish (clears until this monitor learns it's primary)
 window.addEventListener("resize", () => {

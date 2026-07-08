@@ -629,6 +629,9 @@ fn check_birthday(app: &AppHandle) {
         if today == gift.birthday && settings::get().last_birthday_year != year {
             settings::set_last_birthday_year(year);
             settings::set_secret_found(true);
+            // Same emit as mark_secret_found: unlocks the Forbidden Page live AND lets the
+            // wallpaper re-sync secretFound (retiring the hint-star breadcrumb) without a cast.
+            let _ = app.emit("tomes:changed", ());
             log(app, "birthday: surfacing the Hidden Page");
             surface_storybook(app);
         }
