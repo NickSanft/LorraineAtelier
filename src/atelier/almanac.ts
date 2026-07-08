@@ -35,8 +35,13 @@ export function dayOfYear(d: Date): number {
   return n;
 }
 
-/** The day's almanac line: date-hashed, stable all day, advancing one line per day. */
+/** The day's almanac line: date-hashed, stable all day, advancing one line per day.
+ * Uses a continuous serial day number (days since the epoch) from LOCAL calendar fields
+ * via Date.UTC — DST-proof (stable regardless of local clock time) AND monotonic across
+ * the year boundary, where year*1000 + dayOfYear would jump ~636 and step the line
+ * backward on Jan 1. */
 export function pickLine(d: Date, lines: readonly string[] = ALMANAC_LINES): string {
   if (!lines.length) return "";
-  return lines[(d.getFullYear() * 1000 + dayOfYear(d)) % lines.length];
+  const serial = Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
+  return lines[((serial % lines.length) + lines.length) % lines.length];
 }
