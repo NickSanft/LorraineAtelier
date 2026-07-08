@@ -92,6 +92,7 @@ pub struct Settings {
     pub buddy_revealed: bool, // the fudemushi has hatched (set on the first-ever cast); gates roaming
     pub buddy_name: String,   // the name given to the fudemushi (empty = still unnamed)
     pub cast_hint_shown: u32, // times the in-world "magic is drawn" nudge has shown (capped, then never)
+    pub milestone_shown: u32, // highest lifetime-cast milestone already celebrated (Pages of the Tome)
     pub quiet_hours_enabled: bool, // dim the scene to "embers" during the quiet window
     pub quiet_start: String,       // "HH:MM" local — quiet window start
     pub quiet_end: String,         // "HH:MM" local — quiet window end (may wrap past midnight)
@@ -127,6 +128,7 @@ impl Default for Settings {
             buddy_revealed: false, // hatches on the first cast (existing casters auto-revealed via `discovered`)
             buddy_name: String::new(), // unnamed until the naming rite
             cast_hint_shown: 0,    // the casting nudge hasn't shown yet
+            milestone_shown: 0,    // no cast milestone celebrated yet
             quiet_hours_enabled: true, // gift default: the atelier rests at night
             quiet_start: "22:00".into(),
             quiet_end: "07:00".into(),
@@ -321,6 +323,11 @@ pub fn set_buddy_name(name: String) {
 
 pub fn set_cast_hint_shown(v: u32) {
     store().lock().unwrap_or_else(|e| e.into_inner()).cast_hint_shown = v;
+    save();
+}
+
+pub fn set_milestone_shown(v: u32) {
+    store().lock().unwrap_or_else(|e| e.into_inner()).milestone_shown = v;
     save();
 }
 

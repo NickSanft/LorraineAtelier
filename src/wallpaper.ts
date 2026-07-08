@@ -1140,8 +1140,39 @@ function updateGlyphCount(discovered?: Record<string, number>) {
   allDiscovered = BASE_ELEMENTS.every((k) => (discovered?.[k] ?? 0) > 0); // gates the hint star
   scheduleSizes(); // the glyphs pill width changed → re-report size
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
+
+// ---- Pages of the Tome: once-ever parchment lines honoring lifetime-cast milestones.
+// Checked when tomes:changed re-syncs the counts (i.e. right after a cast); the reached
+// milestone is persisted immediately so each line fires exactly once, ever. The line
+// waits ~2.6 s so the cast's bloom and caption settle first, then fades in gently.
+const milestoneEl = document.getElementById("milestoneMsg");
+let milestoneShown = 0;
+let milestoneTimer = 0;
+const MILESTONES: [number, string][] = [
+  [10, "Ten seals inscribed — the pen grows sure in your hand."],
+  [50, "Fifty seals — drawn without looking. The hand remembers."],
+  [100, "One hundred seals, each by your own hand."],
+  [365, "A seal for every day of a year."],
+];
+function checkCastMilestone(discovered?: Record<string, number>) {
+  if (isPrimary === false || !milestoneEl) return;
+  const d = discovered || {};
+  let total = 0;
+  for (const k in d) total += d[k] || 0;
+  let reached = 0, line = "";
+  for (const [n, text] of MILESTONES) if (total >= n && n > milestoneShown) { reached = n; line = text; }
+  if (!reached) return;
+  milestoneShown = reached;
+  invoke("set_milestone_shown", { value: reached }).catch(() => {});
+  setTimeout(() => {
+    milestoneEl.textContent = line;
+    milestoneEl.style.opacity = "1";
+    clearTimeout(milestoneTimer);
+    milestoneTimer = window.setTimeout(() => { milestoneEl.style.opacity = "0"; }, 7500);
+  }, 2600);
+}
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; milestoneShown?: number; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
@@ -1150,8 +1181,8 @@ listen<boolean>("settings:primaryonly", (e) => { primaryOnly = !!e.payload; upda
 // The last frame stays on the (now-off or hidden) canvas, so resuming just eases — no flash.
 listen<boolean>("power:display", (e) => { displayOn = e.payload !== false; updateLoopState(); });
 listen<boolean>("settings:colorblind", (e) => applyColorblind(!!e.payload));
-// A new cast/secret updates the inscribed count (and the hint-star gates).
-listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => { updateGlyphCount(s?.discovered); secretFound = !!s?.secretFound; }).catch(() => {}); });
+// A new cast/secret updates the inscribed count (and the hint-star / milestone gates).
+listen("tomes:changed", () => { invoke<WallSettings>("get_settings").then((s) => { updateGlyphCount(s?.discovered); secretFound = !!s?.secretFound; checkCastMilestone(s?.discovered); }).catch(() => {}); });
 sizeAll();
 scheduleHitRects(); // initial publish (clears until this monitor learns it's primary)
 window.addEventListener("resize", () => {

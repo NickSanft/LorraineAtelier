@@ -1477,6 +1477,14 @@ fn reset_mappings(app: AppHandle) -> String {
     "mappings reset".into()
 }
 
+/// Persist the highest lifetime-cast milestone already celebrated (Pages of the Tome),
+/// so each parchment line fires once ever. The wallpaper checks totals on tomes:changed.
+#[tauri::command]
+fn set_milestone_shown(value: u32) -> String {
+    settings::set_milestone_shown(value);
+    format!("milestone_shown={value}")
+}
+
 /// Mark the secret pentacle as discovered (unlocks the Hidden Page / spellbook).
 #[tauri::command]
 fn mark_secret_found(app: AppHandle) -> String {
@@ -1847,6 +1855,7 @@ pub fn run() {
             set_mapping,
             reset_mappings,
             restore_defaults,
+            set_milestone_shown,
             mark_secret_found,
             preview_storybook,
             dismiss_welcome,
