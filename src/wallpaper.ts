@@ -17,6 +17,7 @@ import {
 import type { Bands } from "./atelier/audio/generative";
 import { currentBands, currentTempo, onBandFrame, setAttuned, takeBeat, type BandFrameMsg } from "./atelier/audio/source";
 import { makeMotes, drawAmbient, makeLanterns, drawLanterns, type Mote } from "./atelier/draw/ambient";
+import { pickLine } from "./atelier/almanac";
 import { attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
 import { glowOpacity } from "./atelier/draw/glow";
@@ -976,6 +977,27 @@ listen<{ attuned: boolean; reason?: string }>("viz:source-changed", (e) => {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// ---- The Almanac of Small Spells: one Witch-Hat line a day in the top strip ----
+// Deterministic by date (src/atelier/almanac.ts); crossfades at the day rollover,
+// which updateClock's 1 s tick catches. No Rust, no persistence.
+const almanacEl = document.getElementById("almanacPill");
+let almanacDayKey = "";
+function updateAlmanac(d: Date) {
+  if (!almanacEl) return;
+  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  if (key === almanacDayKey) return;
+  almanacDayKey = key;
+  const line = pickLine(d);
+  if (almanacEl.textContent) {
+    almanacEl.style.opacity = "0"; // gentle crossfade at midnight
+    setTimeout(() => { almanacEl.textContent = line; almanacEl.style.opacity = "1"; }, 950);
+  } else {
+    almanacEl.textContent = line;
+    almanacEl.style.opacity = "1";
+  }
+}
+
 function updateClock() {
   const d = new Date();
   const hh = d.getHours();
@@ -984,6 +1006,7 @@ function updateClock() {
   elTime.textContent = h12 + ":" + String(d.getMinutes()).padStart(2, "0");
   elAmpm.textContent = hh >= 12 ? "PM" : "AM";
   elDate.textContent = (MONTHS[d.getMonth()] + " " + d.getDate()).toUpperCase();
+  updateAlmanac(d);
 }
 
 let lastTs = 0;

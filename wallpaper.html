@@ -80,6 +80,12 @@
           <span style="color:var(--c-gold);font-family:'EB Garamond',serif;font-size:14px;letter-spacing:0">✦</span>
           <span><span id="glyphcount">0</span> / 4 glyphs inscribed</span>
         </div>
+        <!-- The Almanac of Small Spells: one Witch-Hat line a day, deterministic by date
+             (src/atelier/almanac.ts — salt the list with your own lines). Crossfades at
+             the day rollover; wraps to two lines rather than truncating a quote. Tucked
+             under the glyphs pill (right margin-note) so it can never collide with the
+             title pill or clock at narrow widths. -->
+        <div id="almanacPill" style="position:absolute;right:26px;top:calc(16px + 40px * var(--ui-scale,1));transform:scale(var(--ui-scale,1));transform-origin:top right;max-width:min(44vw,560px);padding:7px 18px;border-radius:16px;border:1px solid var(--c-edge);background:var(--c-panel);backdrop-filter:blur(7px);box-shadow:0 6px 20px rgba(8,6,14,.28);font-family:'EB Garamond',serif;font-style:italic;font-size:13.5px;line-height:1.45;text-align:center;color:var(--c-text);opacity:0;transition:opacity .9s ease"></div>
       </div>
 
       <!-- CLOCK MAGIC CIRCLE (display only) -->
