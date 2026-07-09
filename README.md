@@ -11,22 +11,24 @@ Status: **feature-complete, v1.0.0** (Phases 0–13 done). The personalized NSIS
 ## What it does
 
 **The living scene**
-- A per-monitor animated wallpaper (wall art, drifting ink-motes, a magic-circle clock, an audio-reactive "seal" visualizer, a dock) rendered behind the desktop icons.
-- **Day / Night** palettes; **Quiet Hours** that ease the scene to a dim "embers" state at night; warm **floatglow lanterns** that fade in at dusk.
-- Low idle GPU by design (a damage-driven render loop), with **Framerate**, **primary-monitor-only**, and **brushbuddy** toggles.
+- A per-monitor animated wallpaper (wall art, drifting ink-motes, a magic-circle clock with the **real moon phase** inked in, an audio-reactive "seal" visualizer, a dock) behind the desktop icons — every widget individually **movable and resizable**.
+- **Day / Night** palettes; **Quiet Hours** that ease the scene to a dim "embers" state at night (the clock stays legible); warm **floatglow lanterns** at dusk; a daily **Almanac** line drawn from *Witch Hat Atelier* in the top strip.
+- Low idle GPU by design (a damage-driven loop that also pauses when the display sleeps or the session locks), with **motion**, **main-screen-only**, **glow-intensity**, and **brushbuddy** controls.
 
 **Draw-to-cast magic**
 - Summon a casting overlay (`Ctrl+Alt+W`, the tray, or the on-desktop ✦ glyph), **inscribe a sigil** (△ fire, ▽ water, ○ wind, □ earth, and a secret ✦ star) and **close the ring** — clockwise casts, counter-clockwise dismisses.
-- A pure-Rust recognizer scores the seal (size / steadiness / symmetry); a confident cast **launches or focuses the bound app** (Steam / Discord / browser / Files by default, all rebindable). A rare cursed misfire blooms into canon **Petrification** (a crystal eruption + time-stop) — always harmless.
+- A pure-Rust recognizer scores the seal (size / steadiness / symmetry); the pre-cast reading names the element's **actual bound app**, and a confident cast **launches or focuses** it (Steam / Discord / browser / Files by default, all rebindable). A rare cursed misfire blooms into canon **Petrification** (a crystal eruption + time-stop) — always harmless.
+- After the seal fires, a brief **quality caption** reads its neatness back ("A clean seal." / "the lines wavered"), and each cast leaves a slow **ember** of the element's colour drifting up the scene.
 
 **The brushbuddy**
 - The canon *fudemushi* — a hand-drawn ink companion that roams across all monitors, can be **picked up and dragged** (it animates ~5× faster while held), and accepts a custom sprite.
 
 **Audio visualizer**
-- Generative by default; one tap of **Attune** switches to live **WASAPI loopback** so the seal breathes with whatever's playing.
+- Generative by default; one tap of **Attune** switches to live **WASAPI loopback** so the seal breathes with whatever's playing — and **follows the default output** if you switch devices mid-song. Its **glow intensity** is configurable (Off → Vivid), doubling as a gentle brightness control.
 
 **Easter eggs & the gift**
-- A **Tower of Tomes** spellbook (per-element cast counts + a sealed forbidden page), a conjured **born-from-ink bird**, a weekend **Silver-Eve** festival of falling stars, a one-time first-run welcome, a colorblind palette, and an in-world **casting self-discovery** nudge.
+- A **Tower of Tomes** spellbook (per-element cast counts + a sealed forbidden page) that whispers **milestone lines** as her lifetime casts pass 10 / 50 / 100 / 365; a conjured **born-from-ink bird**; a weekend **Silver-Eve** festival of falling stars (a named fudemushi looks up to watch); a one-time first-run welcome; a colorblind palette; and an in-world **casting self-discovery** nudge.
+- Once all four elements are inscribed, an occasional ink-mote drifts by as a tiny **✦ star** — the world's own breadcrumb toward the hidden fifth seal.
 - **The dedication:** drawing the secret ✦ pentacle reveals a parchment storybook written *For Lorraine*; it also **auto-blooms on her birthday (July 25)**.
 
 **Robustness (it must just work, unattended)**
@@ -73,7 +75,7 @@ pnpm tauri build
 
 ## Personalizing the gift
 
-The dedication, recipient name, birthday, and Silver-Eve date live in `Gift::default()` in [`src-tauri/src/settings.rs`](src-tauri/src/settings.rs). Edit them there (so they ship in the binary), then re-cut the installer with `pnpm tauri build`. The recipient discovers the secret ✦ pentacle herself; setting a recipient name makes the storybook title itself *"For …"*.
+The dedication, recipient name, birthday, and Silver-Eve date live in `Gift::default()` in [`src-tauri/src/settings.rs`](src-tauri/src/settings.rs); the daily **Almanac** lines live in [`src/atelier/almanac.ts`](src/atelier/almanac.ts) (verbatim *Witch Hat Atelier* quotes — salt in your own if you like). Edit them (so they ship in the binary), then re-cut the installer with `pnpm tauri build`. The recipient discovers the secret ✦ pentacle herself; setting a recipient name makes the storybook title itself *"For …"*.
 
 ## Layout
 
