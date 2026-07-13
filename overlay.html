@@ -161,6 +161,12 @@
         <button id="sbTurn" style="border:1px solid rgba(232,200,120,.5);background:rgba(22,20,36,.5);color:#efe6d2;cursor:pointer;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.2em;text-transform:uppercase;padding:9px 20px;border-radius:6px;backdrop-filter:blur(6px)">Turn the page ▸</button>
       </div>
     </div>
+    <!-- The hatched fudemushi idles at middle-right during the naming rite (white-ink loop
+         from public/buddy-idle/). Placed before the card so the card stacks over it on
+         narrow screens; on the dark scrim the white ink reads (no invert, unlike nrBug on
+         the parchment card). -->
+    <img id="nrIdle" src="/buddy-idle/frame_00.png" alt="" style="display:none;position:fixed;right:5vw;top:50%;transform:translateY(-50%);height:min(48vh,400px);width:auto;pointer-events:none;image-rendering:auto;filter:drop-shadow(0 6px 22px rgba(8,6,14,.55))" />
+
     <!-- Naming rite — the first-cast hatching ceremony (the fudemushi emerges + is named). -->
     <div id="namingRite">
       <div class="nr-card">

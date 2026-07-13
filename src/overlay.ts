@@ -51,6 +51,7 @@ const sbTurn = document.getElementById("sbTurn") as HTMLButtonElement;
 const sbPrev = document.getElementById("sbPrev") as HTMLButtonElement;
 const namingRite = document.getElementById("namingRite") as HTMLElement;
 const nrBug = document.getElementById("nrBug") as HTMLImageElement;
+const nrIdle = document.getElementById("nrIdle") as HTMLImageElement | null;
 const nrInput = document.getElementById("nrInput") as HTMLInputElement;
 const nrName = document.getElementById("nrName") as HTMLButtonElement;
 const nrLater = document.getElementById("nrLater") as HTMLButtonElement;
@@ -90,6 +91,7 @@ function reset() {
   sigilCenter = null; sigilScore = 0; sigilDiag = 0; prepared = null; blooming = false;
   storybook.style.display = "none"; // back to the casting slate
   namingRite.style.display = "none";
+  stopIdle();
   slate.style.display = "flex";
   storybookOpen = false;
   namingOpen = false;
@@ -611,6 +613,33 @@ async function openStorybook() {
   } catch { /* mount failed — storybook mode is at least active (no slate) */ }
 }
 
+// The newly-hatched fudemushi idles at the middle-right of the screen during the naming
+// rite — a full-body white-ink loop (public/buddy-idle/, prepped from mockup/assets/
+// BrushbuddyIdle by scripts/buddy-idle-frames.mjs). Frames are lazily preloaded on the
+// first open (the rite is a once-ever ceremony) and cycled gently while it's on screen.
+const IDLE_FRAMES = 25;
+const IDLE_URLS = Array.from({ length: IDLE_FRAMES }, (_, i) => `/buddy-idle/frame_${String(i).padStart(2, "0")}.png`);
+let idlePreloaded = false;
+let idleTimer = 0;
+let idleIdx = 0;
+function startIdle() {
+  if (!nrIdle) return;
+  if (!idlePreloaded) { IDLE_URLS.forEach((u) => { const im = new Image(); im.src = u; }); idlePreloaded = true; }
+  idleIdx = 0;
+  nrIdle.src = IDLE_URLS[0];
+  nrIdle.style.display = "block";
+  clearInterval(idleTimer);
+  idleTimer = window.setInterval(() => {
+    idleIdx = (idleIdx + 1) % IDLE_FRAMES;
+    nrIdle.src = IDLE_URLS[idleIdx];
+  }, 100); // ~10 fps — a gentle idle sway, no flicker (photosensitivity-safe)
+}
+function stopIdle() {
+  clearInterval(idleTimer);
+  idleTimer = 0;
+  if (nrIdle) nrIdle.style.display = "none";
+}
+
 // The first-cast hatching ceremony: the casting seal gives way to a parchment card
 // where the newly-hatched fudemushi uncurls and Lorraine names it. The overlay still
 // holds focus (the first cast launches no app), so the name field can be typed into.
@@ -626,6 +655,7 @@ function openNamingRite() {
   // Restart the entrance + hatch animations on each open so the dev preview replays.
   namingRite.style.animation = "none"; void namingRite.offsetWidth; namingRite.style.animation = "";
   nrBug.style.animation = "none"; void nrBug.offsetWidth; nrBug.style.animation = "";
+  startIdle(); // the hatched fudemushi idles at middle-right while she names it
   setTimeout(() => nrInput.focus(), 60);
 }
 
@@ -637,6 +667,7 @@ function finishNaming(save: boolean) {
   const name = nrInput.value.trim();
   if (save && name) invoke("set_buddy_name", { name }).catch(() => {});
   namingRite.style.display = "none";
+  stopIdle();
   hide();
 }
 
@@ -652,6 +683,7 @@ function setOverlayMode(m: string) {
     slate.style.display = "none";
     storybook.style.display = "none";
     namingRite.style.display = "none";
+    stopIdle();
     storybookOpen = false;
     namingOpen = false;
   }
