@@ -1,6 +1,6 @@
 import type { CanvasPalette, Sigil } from "../palette";
 import type { Bands } from "../audio/generative";
-import { drawGlyphPath } from "./viz";
+import { drawElementSigil } from "./elementSigil";
 
 // The visualizer "seal" — an audio-reactive magic circle rendered as drawn INK
 // rather than generic glow (Phase 6 ink-magic refinements). It is stateful: bands
@@ -182,15 +182,14 @@ export function drawSeal(
     ctx.stroke();
   }
 
-  // central sigil — bass swells it, treble + a beat make it flare gold.
-  const size = R * 0.2 * (1 + s.bass * 0.5);
-  ctx.globalAlpha = 0.7 + s.bass * 0.3;
-  ctx.strokeStyle = gold;
-  ctx.lineWidth = 2.2 + s.beat * 1.6;
-  ctx.shadowColor = gold;
+  // central sigil — bass swells it, treble + a beat make it flare. The canon-flavoured
+  // element glyph (fire/water/wind/earth) for the active sigil, inked in teal with gold
+  // accents; drawGlyphPath (the alchemical △▽○□) still backs the drawing/recognizer + bloom.
+  const size = R * 0.22 * (1 + s.bass * 0.5);
+  ctx.globalAlpha = 0.72 + s.bass * 0.28;
+  ctx.lineWidth = 2.0 + s.beat * 1.5;
   ctx.shadowBlur = 12 + s.high * 24 + s.beat * 28;
-  drawGlyphPath(ctx, sigil, size);
-  ctx.stroke();
+  drawElementSigil(ctx, sigil, size, teal, gold);
 
   ctx.restore();
   ctx.globalAlpha = 1;
