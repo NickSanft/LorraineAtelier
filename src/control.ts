@@ -40,6 +40,7 @@ const ringSpeedSel = document.getElementById("ringSpeed") as HTMLSelectElement;
 const glowSel = document.getElementById("glowIntensity") as HTMLSelectElement;
 const primaryOnlyBtn = document.getElementById("primaryOnly") as HTMLButtonElement;
 const buddyEnabledBtn = document.getElementById("buddyEnabled") as HTMLButtonElement;
+const idleBuddyEnabledBtn = document.getElementById("idleBuddyEnabled") as HTMLButtonElement;
 const quietToggleBtn = document.getElementById("quietToggle") as HTMLButtonElement;
 const quietStartInput = document.getElementById("quietStart") as HTMLInputElement;
 const quietEndInput = document.getElementById("quietEnd") as HTMLInputElement;
@@ -65,6 +66,7 @@ let colorblindOn = false;
 let startupOn = false;
 let primaryOnlyOn = true;
 let buddyEnabledOn = true;
+let idleBuddyEnabledOn = true;
 let quietEnabledOn = true;
 
 function renderMode() {
@@ -100,6 +102,10 @@ function renderBuddyEnabled() {
   buddyEnabledBtn.textContent = `Brushbuddy: ${buddyEnabledOn ? "on" : "off"}`;
   buddyEnabledBtn.classList.toggle("on", buddyEnabledOn);
 }
+function renderIdleBuddyEnabled() {
+  idleBuddyEnabledBtn.textContent = `Idle buddy: ${idleBuddyEnabledOn ? "on" : "off"}`;
+  idleBuddyEnabledBtn.classList.toggle("on", idleBuddyEnabledOn);
+}
 function renderQuiet() {
   quietToggleBtn.textContent = `Quiet hours: ${quietEnabledOn ? "on" : "off"}`;
   quietToggleBtn.classList.toggle("on", quietEnabledOn);
@@ -120,6 +126,7 @@ interface SettingsDto {
   glowIntensity: number;
   primaryOnly: boolean;
   buddyEnabled: boolean;
+  idleBuddyEnabled: boolean;
   quietHoursEnabled: boolean;
   quietStart: string;
   quietEnd: string;
@@ -227,6 +234,7 @@ async function main() {
     startupOn = !!s.runAtStartup;
     primaryOnlyOn = s.primaryOnly !== false; // default true
     buddyEnabledOn = s.buddyEnabled !== false; // default true
+    idleBuddyEnabledOn = s.idleBuddyEnabled !== false; // default true
     quietEnabledOn = s.quietHoursEnabled !== false; // default on
     if (s.quietStart) quietStartInput.value = s.quietStart;
     if (s.quietEnd) quietEndInput.value = s.quietEnd;
@@ -254,7 +262,7 @@ async function main() {
     append("get_settings ✗ " + e);
   }
   try { attuned = !!(await invoke<boolean>("viz_status")); } catch { /* */ }
-  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup(); renderPrimaryOnly(); renderBuddyEnabled(); renderQuiet();
+  renderMode(); renderAttune(); renderPause(); renderInteract(); renderColorblind(); renderStartup(); renderPrimaryOnly(); renderBuddyEnabled(); renderIdleBuddyEnabled(); renderQuiet();
 
   // Flip via the authoritative Rust toggle; our label updates from the
   // `settings:mode` broadcast below (so it can't desync from the real state).
@@ -311,6 +319,12 @@ async function main() {
     renderBuddyEnabled();
     await invoke("set_buddy_enabled", { enabled: buddyEnabledOn });
     append(`brushbuddy → ${buddyEnabledOn ? "on" : "off"}`);
+  });
+  idleBuddyEnabledBtn.addEventListener("click", async () => {
+    idleBuddyEnabledOn = !idleBuddyEnabledOn;
+    renderIdleBuddyEnabled();
+    await invoke("set_idle_buddy_enabled", { enabled: idleBuddyEnabledOn });
+    append(`idle buddy → ${idleBuddyEnabledOn ? "on" : "off"}`);
   });
   const applyQuietHours = async () => {
     await invoke("set_quiet_hours", { enabled: quietEnabledOn, start: quietStartInput.value || "22:00", end: quietEndInput.value || "07:00" });
@@ -370,6 +384,7 @@ async function main() {
       colorblindOn = !!s.colorblind;
       primaryOnlyOn = s.primaryOnly !== false;
       buddyEnabledOn = s.buddyEnabled !== false;
+      idleBuddyEnabledOn = s.idleBuddyEnabled !== false;
       quietEnabledOn = s.quietHoursEnabled !== false;
       quietStartInput.value = s.quietStart || "22:00";
       quietEndInput.value = s.quietEnd || "07:00";
@@ -377,14 +392,14 @@ async function main() {
       ringSpeedSel.value = String(s.ringSpeed ?? 0.5);
       glowSel.value = String(s.glowIntensity ?? 1);
       buddySpriteInput.value = s.buddySprite || "";
-      renderMode(); renderPause(); renderColorblind(); renderPrimaryOnly(); renderBuddyEnabled(); renderQuiet();
+      renderMode(); renderPause(); renderColorblind(); renderPrimaryOnly(); renderBuddyEnabled(); renderIdleBuddyEnabled(); renderQuiet();
     } catch { /* */ }
     append("the Atelier's defaults were restored");
   });
 
   // ---- Widget layout editor: drag chips in a monitor preview + a size slider ----
   interface WPos { x: number; y: number; scale: number; vertical?: boolean }
-  const LAYOUT_DEFAULTS: Record<string, { x: number; y: number }> = { clock: { x: 3, y: 7 }, seal: { x: 4, y: 55 }, dock: { x: 28, y: 86 }, titlePill: { x: 3, y: 2 }, glyphsPill: { x: 68, y: 2 }, almanacPill: { x: 60, y: 9 } };
+  const LAYOUT_DEFAULTS: Record<string, { x: number; y: number }> = { clock: { x: 3, y: 7 }, seal: { x: 4, y: 55 }, dock: { x: 28, y: 86 }, titlePill: { x: 3, y: 2 }, glyphsPill: { x: 68, y: 2 }, almanacPill: { x: 60, y: 9 }, idleBuddy: { x: 52, y: 60 } };
   const stage = document.getElementById("layoutStage")!;
   const selNameEl = document.getElementById("selWidgetName")!;
   const selScaleEl = document.getElementById("selWidgetScale") as HTMLInputElement;
@@ -450,7 +465,7 @@ async function main() {
     stage.innerHTML = ""; for (const k in chips) delete chips[k];
     for (const n of Object.keys(LAYOUT_DEFAULTS)) {
       const chip = document.createElement("div");
-      chip.textContent = n.replace("Pill", "");
+      chip.textContent = n === "idleBuddy" ? "Buddy" : n.replace("Pill", "");
       chip.style.cssText = `position:absolute;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:#efe6d2;background:rgba(232,184,74,.16);border:1px solid var(--gold);border-radius:5px;cursor:grab;user-select:none;overflow:hidden;box-sizing:border-box;touch-action:none;`;
       chip.addEventListener("pointerdown", (e) => startDrag(e, n));
       stage.appendChild(chip); chips[n] = chip;
