@@ -88,7 +88,8 @@ pub struct Settings {
     pub run_at_startup: bool, // launch the atelier at login (HKCU Run key)
     pub frame_rate: u32, // wallpaper render cap in fps; 0 = monitor refresh rate
     pub primary_only: bool, // animate only the primary monitor; secondaries get the static OS wallpaper
-    pub buddy_enabled: bool, // show + animate the brushbuddy
+    pub buddy_enabled: bool, // show + animate the (roaming) brushbuddy
+    pub idle_buddy_enabled: bool, // show the idle-buddy scene widget on the desktop (independent peer to buddy_enabled; still gated by buddy_revealed)
     pub buddy_revealed: bool, // the fudemushi has hatched (set on the first-ever cast); gates roaming
     pub buddy_name: String,   // the name given to the fudemushi (empty = still unnamed)
     pub cast_hint_shown: u32, // times the in-world "magic is drawn" nudge has shown (capped, then never)
@@ -126,6 +127,7 @@ impl Default for Settings {
             frame_rate: 30,        // gentle default; lowest GPU/CPU
             primary_only: true,    // default: full scene on primary, static art elsewhere
             buddy_enabled: true,   // the brushbuddy roams by default
+            idle_buddy_enabled: true, // the idle desktop companion shows once hatched (gated by buddy_revealed)
             buddy_revealed: false, // hatches on the first cast (existing casters auto-revealed via `discovered`)
             buddy_name: String::new(), // unnamed until the naming rite
             cast_hint_shown: 0,    // the casting nudge hasn't shown yet
@@ -311,6 +313,11 @@ pub fn set_primary_only(v: bool) {
 
 pub fn set_buddy_enabled(v: bool) {
     store().lock().unwrap_or_else(|e| e.into_inner()).buddy_enabled = v;
+    save();
+}
+
+pub fn set_idle_buddy_enabled(v: bool) {
+    store().lock().unwrap_or_else(|e| e.into_inner()).idle_buddy_enabled = v;
     save();
 }
 

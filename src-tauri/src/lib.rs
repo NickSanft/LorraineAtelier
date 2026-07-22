@@ -1371,6 +1371,16 @@ fn set_buddy_enabled(app: AppHandle, enabled: bool) -> String {
     format!("buddy_enabled={enabled}")
 }
 
+/// Toggle the idle-buddy desktop widget (independent of the roaming buddy above).
+/// The wallpaper only actually shows it once the fudemushi has hatched
+/// (buddy_revealed), so before the first cast this flag is inert. Applied live.
+#[tauri::command]
+fn set_idle_buddy_enabled(app: AppHandle, enabled: bool) -> String {
+    settings::set_idle_buddy_enabled(enabled);
+    let _ = app.emit("settings:idlebuddyenabled", enabled);
+    format!("idle_buddy_enabled={enabled}")
+}
+
 /// Set a custom brushbuddy sprite (a file path or URL; empty restores the built-in).
 /// Persisted + broadcast so every wallpaper swaps the sprite live.
 #[tauri::command]
@@ -1855,6 +1865,7 @@ pub fn run() {
             set_frame_rate,
             set_primary_only,
             set_buddy_enabled,
+            set_idle_buddy_enabled,
             set_buddy_sprite,
             set_widget_layout,
             reset_widget_layout,
