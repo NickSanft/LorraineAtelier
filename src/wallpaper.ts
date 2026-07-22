@@ -110,6 +110,7 @@ function applyMode(mode: Mode) {
   tint.style.opacity = getTintOpacityForMode(mode);
   pal = PAL[mode];
   applyBuddyInkMode(); // white-ink buddy frames invert on the bright day scene
+  applyIdleBuddyInkMode(); // ditto for the idle desktop companion
   const glowCenter = mode === "night" ? ".5" : ".7"; // day glow needs a stronger centre to read
   glow.style.background = `radial-gradient(circle, ${pal.glowColor}${glowCenter}), ${pal.glowColor}0) 62%)`;
   // `screen` makes the teal bloom glow on the dark night scene, but it can't
@@ -435,13 +436,15 @@ const dockEl = document.getElementById("dock");
 const titlePillEl = document.getElementById("titlePill");
 const glyphsPillEl = document.getElementById("glyphsPill");
 const almanacEl = document.getElementById("almanacPill"); // also a layout widget (declared here so LAYOUT_WIDGETS can include it)
+const idleBuddyEl = document.getElementById("idleBuddy"); // idle-buddy desktop widget (also a layout widget)
+const idleBuddyImg = document.getElementById("idleBuddyImg") as HTMLImageElement | null;
 let isPrimary: boolean | null = null;
 
 // ---- widget layout customization (control window edits {x%, y%, scale} per widget) ----
 // An override repositions a widget (top-left anchor, % of the work area) and scales it
 // on top of the auto monitor-height ui-scale. No override = its built-in placement.
 interface WidgetPos { x: number; y: number; scale: number; vertical?: boolean }
-const LAYOUT_WIDGETS: Record<string, HTMLElement | null> = { clock: clockEl, seal: sealEl, dock: dockEl, titlePill: titlePillEl, glyphsPill: glyphsPillEl, almanacPill: almanacEl };
+const LAYOUT_WIDGETS: Record<string, HTMLElement | null> = { clock: clockEl, seal: sealEl, dock: dockEl, titlePill: titlePillEl, glyphsPill: glyphsPillEl, almanacPill: almanacEl, idleBuddy: idleBuddyEl };
 const widgetOrigStyle: Record<string, string> = {};
 for (const [name, el] of Object.entries(LAYOUT_WIDGETS)) if (el) widgetOrigStyle[name] = el.getAttribute("style") || "";
 let widgetLayout: Record<string, WidgetPos> = {};
@@ -533,6 +536,38 @@ function applyBuddyInkMode() {
   if (buddyImg) buddyImg.style.filter = useFrames && curMode === "day" ? "invert(1)" : "";
 }
 
+// ---- idle-buddy DESKTOP widget: a persistent companion sprite, SEPARATE from the roaming
+// buddy above and from the naming-rite overlay's idle. Cycles the white-ink frames in
+// public/buddy-idle/ on a gentle ~10 fps setInterval (flash-safe, the same cadence the rite
+// uses). It is a LAYOUT_WIDGET (movable/scalable) and toggles via a `.shown` class so its
+// enable state survives applyWidgetLayout's style reset. Shown only once the fudemushi has
+// hatched (buddyRevealed) AND the control toggle (idleBuddyEnabled) is on; the loop also
+// pauses whenever the scene loop does (secondary / display-off) to keep idle GPU at ~0.
+const IDLE_FRAMES = 25;
+const IDLE_FRAME_URLS = Array.from({ length: IDLE_FRAMES }, (_, i) => `/buddy-idle/frame_${String(i).padStart(2, "0")}.png`);
+IDLE_FRAME_URLS.forEach((u) => { const im = new Image(); im.src = u; }); // preload → seamless loop
+let idleFrameIdx = 0, idleTimer = 0;
+let idleBuddyEnabled = true; // the control toggle (settings:idlebuddyenabled); default on
+let buddyRevealed = false;   // the fudemushi has hatched — gates the idle widget's first appearance
+function idleBuddyShown(): boolean { return idleBuddyEnabled && buddyRevealed; }
+function applyIdleBuddyInkMode() { if (idleBuddyImg) idleBuddyImg.style.filter = curMode === "day" ? "invert(1)" : ""; }
+function stepIdleBuddy() { if (!idleBuddyImg) return; idleFrameIdx = (idleFrameIdx + 1) % IDLE_FRAMES; idleBuddyImg.src = IDLE_FRAME_URLS[idleFrameIdx]; }
+function updateIdleBuddyLoop() {
+  // Run only while actually visible AND the scene is animating (mirror updateLoopState's
+  // predicate) so a static/secondary/off monitor swaps no frames.
+  const run = idleBuddyShown() && displayOn && (!primaryOnly || isPrimary !== false);
+  clearInterval(idleTimer); idleTimer = 0;
+  if (run) {
+    if (idleBuddyImg && !idleBuddyImg.getAttribute("src")) idleBuddyImg.src = IDLE_FRAME_URLS[idleFrameIdx];
+    idleTimer = window.setInterval(stepIdleBuddy, 100); // ~10 fps gentle sway
+  }
+}
+function applyIdleBuddyVisible() {
+  if (idleBuddyEl) idleBuddyEl.classList.toggle("shown", idleBuddyShown());
+  applyIdleBuddyInkMode();
+  updateIdleBuddyLoop();
+}
+
 // Swappable buddy sprite: empty = the default white-ink walk frames; a path/URL shows
 // your own (static) image instead (local paths via Tauri's asset protocol). Falls
 // back to the frames if a custom image fails to load.
@@ -555,8 +590,12 @@ function applyBuddySprite(src?: string) {
 }
 listen<string>("settings:buddySprite", (e) => applyBuddySprite(e.payload));
 listen<boolean>("settings:buddyenabled", (e) => { if (buddyEl) buddyEl.style.display = e.payload ? "" : "none"; if (!e.payload) labelFrames = 0; /* clear any pending name drift when the buddy is hidden */ });
-listen("buddy:born", () => { bornFrames = BORN_DUR; }); // the fudemushi hatches (first cast / dev preview)
+listen("buddy:born", () => { bornFrames = BORN_DUR; buddyRevealed = true; applyIdleBuddyVisible(); }); // the fudemushi hatches (first cast / dev preview) → also reveal the idle desktop companion
 listen<string>("settings:buddyname", (e) => { buddyName = (e.payload || "").trim(); if (buddyName) labelFrames = LABEL_DUR; }); // (re)named → drift the label
+// The idle-buddy desktop widget: its control toggle, and the reveal gate (broadcast when the
+// fudemushi hatches). Either changing re-evaluates whether the sprite shows + its loop runs.
+listen<boolean>("settings:idlebuddyenabled", (e) => { idleBuddyEnabled = e.payload !== false; applyIdleBuddyVisible(); });
+listen<boolean>("settings:buddyrevealed", (e) => { buddyRevealed = e.payload !== false; applyIdleBuddyVisible(); });
 
 // Primary monitor shows the full widgets (clock + seal + top strip + dock);
 // secondary monitors stay calm — just art, ambient motes, glow, and the passing
@@ -1155,6 +1194,7 @@ function updateLoopState() {
     stopLoop();
     glow.style.opacity = "0"; // drop the frozen bloom on a now-static secondary
   }
+  updateIdleBuddyLoop(); // keep the idle-sprite loop in lockstep with the scene's animate state
 }
 function setFrameRate(fps: number) {
   frameRate = Math.max(0, fps | 0);
@@ -1286,8 +1326,8 @@ function checkCastMilestone(discovered?: Record<string, number>) {
     milestoneTimer = window.setTimeout(() => { milestoneEl.style.opacity = "0"; }, 7500);
   }, 2600);
 }
-interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; milestoneShown?: number; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number; glowIntensity?: number }
-invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; seedMilestones(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; if (typeof s.glowIntensity === "number") glowIntensity = s.glowIntensity; buddyName = (s.buddyName || "").trim(); checkQuiet(); } }).catch(() => {});
+interface WallSettings { mode: Mode; colorblind?: boolean; discovered?: Record<string, number>; secretFound?: boolean; milestoneShown?: number; mappings?: Record<string, string>; buddySprite?: string; buddyName?: string; widgetLayout?: Record<string, WidgetPos>; frameRate?: number; primaryOnly?: boolean; buddyEnabled?: boolean; idleBuddyEnabled?: boolean; buddyRevealed?: boolean; quietHoursEnabled?: boolean; quietStart?: string; quietEnd?: string; ringSpeed?: number; glowIntensity?: number }
+invoke<WallSettings>("get_settings").then((s) => { if (s?.mode) applyMode(s.mode); if (s) { applyColorblind(!!s.colorblind); updateGlyphCount(s.discovered); secretFound = !!s.secretFound; if (typeof s.milestoneShown === "number") milestoneShown = s.milestoneShown; seedMilestones(s.discovered); applyBindingLabels(s.mappings); applyBuddySprite(s.buddySprite); widgetLayout = s.widgetLayout || {}; applyWidgetLayout(); if (typeof s.frameRate === "number") setFrameRate(s.frameRate); if (typeof s.primaryOnly === "boolean") { primaryOnly = s.primaryOnly; updateLoopState(); } if (buddyEl) buddyEl.style.display = s.buddyEnabled === false ? "none" : ""; if (typeof s.quietHoursEnabled === "boolean") quietCfg = { enabled: s.quietHoursEnabled, start: s.quietStart || "22:00", end: s.quietEnd || "07:00" }; if (typeof s.ringSpeed === "number") ringSpeed = s.ringSpeed; if (typeof s.glowIntensity === "number") glowIntensity = s.glowIntensity; buddyName = (s.buddyName || "").trim(); if (typeof s.idleBuddyEnabled === "boolean") idleBuddyEnabled = s.idleBuddyEnabled; buddyRevealed = !!s.buddyRevealed; applyIdleBuddyVisible(); checkQuiet(); } }).catch(() => {});
 listen<string>("settings:mode", (e) => applyMode(e.payload as Mode));
 listen<number>("settings:framerate", (e) => setFrameRate(Number(e.payload) || 0));
 listen<number>("settings:ringspeed", (e) => { ringSpeed = Number(e.payload) || 0.5; });
