@@ -362,7 +362,11 @@ fn recreate_window(app: &AppHandle, i: usize, mon: &workerw::Monitor) {
     .focused(false)
     .visible(false)
     .additional_browser_args(
-        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
+        // MUST stay byte-identical to the args in tauri.conf.json for every window, or the
+        // shared WebView2 environment splits and window creation breaks. Beyond disabling
+        // native occlusion, we also opt the never-focused WorkerW renderer out of Chromium's
+        // background/EcoQoS/timer throttling so the setTimeout render loop keeps its cadence.
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,UseEcoQoSForBackgroundProcess --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling",
     )
     .inner_size(mon.width.max(1) as f64, mon.height.max(1) as f64)
     .build();
