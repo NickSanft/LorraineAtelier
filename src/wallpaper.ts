@@ -546,21 +546,28 @@ function applyBuddyInkMode() {
 const IDLE_FRAMES = 25;
 const IDLE_FRAME_URLS = Array.from({ length: IDLE_FRAMES }, (_, i) => `/buddy-idle/frame_${String(i).padStart(2, "0")}.png`);
 IDLE_FRAME_URLS.forEach((u) => { const im = new Image(); im.src = u; }); // preload → seamless loop
-let idleFrameIdx = 0, idleTimer = 0;
+let idleFrameIdx = 0, idleBuddyRunning = false, idleAccumMs = 0, idleLastTs = 0;
 let idleBuddyEnabled = true; // the control toggle (settings:idlebuddyenabled); default on
 let buddyRevealed = false;   // the fudemushi has hatched — gates the idle widget's first appearance
 function idleBuddyShown(): boolean { return idleBuddyEnabled && buddyRevealed; }
 function applyIdleBuddyInkMode() { if (idleBuddyImg) idleBuddyImg.style.filter = curMode === "day" ? "invert(1)" : ""; }
 function stepIdleBuddy() { if (!idleBuddyImg) return; idleFrameIdx = (idleFrameIdx + 1) % IDLE_FRAMES; idleBuddyImg.src = IDLE_FRAME_URLS[idleFrameIdx]; }
+// Advance the ~10 fps sway from INSIDE drawFrame (no separate setInterval), so the sprite
+// swap coalesces into the render loop's single ~30 Hz present instead of adding a second,
+// phase-drifting ~10 Hz damage train that desyncs the compositor.
+function advanceIdleBuddy(ts: number) {
+  if (!idleBuddyRunning) return;
+  if (idleLastTs) idleAccumMs += ts - idleLastTs;
+  idleLastTs = ts;
+  if (idleAccumMs >= 100) { idleAccumMs -= 100; stepIdleBuddy(); } // ~10 fps
+}
 function updateIdleBuddyLoop() {
-  // Run only while actually visible AND the scene is animating (mirror updateLoopState's
-  // predicate) so a static/secondary/off monitor swaps no frames.
-  const run = idleBuddyShown() && displayOn && (!primaryOnly || isPrimary !== false);
-  clearInterval(idleTimer); idleTimer = 0;
-  if (run) {
-    if (idleBuddyImg && !idleBuddyImg.getAttribute("src")) idleBuddyImg.src = IDLE_FRAME_URLS[idleFrameIdx];
-    idleTimer = window.setInterval(stepIdleBuddy, 100); // ~10 fps gentle sway
-  }
+  // Gate the sway on visibility AND the scene animating (mirror updateLoopState's predicate);
+  // drawFrame reads idleBuddyRunning each frame, and only runs while animating, so a
+  // static/secondary/off monitor advances no frames. Reset the cadence so a resume never bursts.
+  idleBuddyRunning = idleBuddyShown() && displayOn && (!primaryOnly || isPrimary !== false);
+  idleAccumMs = 0; idleLastTs = 0;
+  if (idleBuddyRunning && idleBuddyImg && !idleBuddyImg.getAttribute("src")) idleBuddyImg.src = IDLE_FRAME_URLS[idleFrameIdx];
 }
 function applyIdleBuddyVisible() {
   if (idleBuddyEl) idleBuddyEl.classList.toggle("shown", idleBuddyShown());
@@ -637,11 +644,9 @@ function applyInsets(top: number, right: number, bottom: number, left: number) {
   scheduleHitRects(); // the dock shifted with the work-area inset
 }
 
-listen<BuddyMsg>("buddy", (e) => {
-  const m = e.payload;
-  if (m.label !== selfLabel) return; // ignore other monitors' messages (cross-talk guard)
-  applyPrimary(m.primary);
-  applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
+// Apply the roaming buddy's sprite pose. Split out so it can run either coalesced inside
+// drawFrame (animating monitor) or immediately (static monitor); see the listener below.
+function applyBuddyVisual(m: BuddyMsg) {
   if (!buddyEl) return;
   if (!m.visible) { buddyEl.style.opacity = "0"; if (buddyLabel) buddyLabel.style.opacity = "0"; return; } // hidden (off its monitor, or not yet hatched): skip transform → no damage
   // m.x/m.y arrive in physical px (Rust virtual-desktop coords); the transform and the
@@ -686,13 +691,33 @@ listen<BuddyMsg>("buddy", (e) => {
     }
     buddyLabel.style.opacity = showLabel ? "1" : "0";
   }
+}
+
+// The buddy stream (~30 Hz from Rust) is a second DOM-write train whose phase is unrelated to
+// the render loop; two ~30 Hz sources beat out of phase and jitter the visualizer. So on an
+// ANIMATING monitor we stash the latest pose and let drawFrame apply it once, coalescing both
+// into a single present. applyPrimary/applyInsets stay IMMEDIATE — a secondary learns its role
+// from them, and a paused loop must not strand that. On a STATIC monitor (secondary under
+// primary-only, or display off) drawFrame isn't running, so we apply the pose immediately there
+// so the buddy still renders as it walks across.
+let pendingBuddy: BuddyMsg | null = null;
+listen<BuddyMsg>("buddy", (e) => {
+  const m = e.payload;
+  if (m.label !== selfLabel) return; // ignore other monitors' messages (cross-talk guard)
+  applyPrimary(m.primary);
+  applyInsets(m.insetTop, m.insetRight, m.insetBottom, m.insetLeft);
+  if (loopRunning) pendingBuddy = m; // coalesce into drawFrame's single present
+  else applyBuddyVisual(m);          // static monitor: render now (drawFrame isn't running)
 }, { target: selfLabel });
 
 // ---- cast bloom: origami unfold driven by Rust `cast:fire` (broadcast to every
 // monitor; all wallpaper windows bloom at their own centre). Reuses the shared
 // drawGlyphPath so a cast and the visualizer seal speak the same glyph vocabulary.
 interface CastFire { sigil: string; score: number; inverse: boolean; sideways: boolean; jutDir: number; hue: string; key: string; ink: number; }
-let bloomRaf = 0;
+// One shared handle for the transient #bloom effects (bloom / bird / hint / festival). They
+// all draw the SAME #bloom canvas, so starting any cancels the one already running instead of
+// letting two rAF loops clearRect-fight (visible flicker) and drive two continuous presents.
+let fxRaf = 0;
 function startBloom(m: CastFire) {
   const c = bloom as CV;
   const ctx = c.getContext("2d")!;
@@ -707,7 +732,7 @@ function startBloom(m: CastFire) {
   const start = performance.now();
   const dur = score >= 70 ? 1300 : score >= 42 ? 1500 : 1700;
   const sloppy = score < 42;
-  cancelAnimationFrame(bloomRaf);
+  cancelAnimationFrame(fxRaf);
   const anim = (now: number) => {
     const p = Math.min(1, (now - start) / dur);
     ctx.clearRect(0, 0, w, h);
@@ -739,18 +764,16 @@ function startBloom(m: CastFire) {
     fl.addColorStop(1, "rgba(0,0,0,0)");
     ctx.globalAlpha = 1; ctx.fillStyle = fl; ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.2832); ctx.fill();
     ctx.restore(); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-    if (p < 1) bloomRaf = requestAnimationFrame(anim);
+    if (p < 1) fxRaf = requestAnimationFrame(anim);
     else ctx.clearRect(0, 0, w, h);
   };
-  bloomRaf = requestAnimationFrame(anim);
+  fxRaf = requestAnimationFrame(anim);
 }
 
 // ---- bird sigil egg: a conjured bird BORN FROM INK (WHA "magic is drawn"). It
 // glides in on a banking arc, beats asymmetric tapered-ink wings in flap→glide
 // phrasing, trails sumi ink tinted toward the viz hue, then dissolves into ink-motes
 // on exit. Day = near-black sumi; night = parchment-cream with a faint gold glow-ink.
-let birdRaf = 0;
-
 // A tapered curved brush-ribbon (filled): from A (half-width wa) through control C
 // to B (half-width wb). The single primitive every part of the bird is drawn with.
 function inkRibbon(ctx: CanvasRenderingContext2D, ax: number, ay: number, cx: number, cy: number, bx: number, by: number, wa: number, wb: number) {
@@ -815,7 +838,7 @@ function startBird() {
   let motes: { x: number; y: number; vx: number; vy: number; r: number; a: number }[] = [];
   let prevX = 0, prevY = 0, primed = false;
   const start = performance.now();
-  cancelAnimationFrame(birdRaf);
+  cancelAnimationFrame(fxRaf);
   const anim = (now: number) => {
     const t = now - start, p = t / dur;
     ctx.clearRect(0, 0, w, h);
@@ -854,9 +877,9 @@ function startBird() {
       motes = motes.filter((m) => m.a > 0);
     }
     ctx.globalAlpha = 1;
-    birdRaf = requestAnimationFrame(anim);
+    fxRaf = requestAnimationFrame(anim);
   };
-  birdRaf = requestAnimationFrame(anim);
+  fxRaf = requestAnimationFrame(anim);
 }
 listen("cast:bird", () => startBird());
 
@@ -864,7 +887,6 @@ listen("cast:bird", () => startBird());
 // parchment line invites her to take up the pen — so draw-to-cast (the heart of the
 // gift) can't go unfound. Render-only on the #bloom canvas, dissolves on its own,
 // reduced-motion-safe, primary monitor only. Rust gates how often it shows.
-let hintRaf = 0;
 function playCastHint() {
   const c = bloom as CV;
   const ctx = c.getContext("2d")!;
@@ -878,7 +900,7 @@ function playCastHint() {
   const total = trace + hold + fade;
   const teal = pal.teal, gold = pal.gold;
   const start = performance.now();
-  cancelAnimationFrame(hintRaf);
+  cancelAnimationFrame(fxRaf);
   const step = (now: number) => {
     const t = now - start;
     ctx.clearRect(0, 0, w, h);
@@ -923,15 +945,14 @@ function playCastHint() {
       ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
-    hintRaf = requestAnimationFrame(step);
+    fxRaf = requestAnimationFrame(step);
   };
-  hintRaf = requestAnimationFrame(step);
+  fxRaf = requestAnimationFrame(step);
 }
 listen("gift:casthint", () => { if (isPrimary !== false) playCastHint(); });
 
 // ---- Silver-Eve festival egg: a drift of gold/silver star-motes ("the Night of
 // the Falling Stars"), surfaced by Rust on the date or via the preview button.
-let festivalRaf = 0;
 function startFestival() {
   const c = bloom as CV;
   const ctx = c.getContext("2d")!;
@@ -944,7 +965,7 @@ function startFestival() {
     sway: Math.random() * 6.28, swaySpd: 0.4 + Math.random(), r: 1 + Math.random() * 2.2, gold: Math.random() < 0.55,
   }));
   let last = start;
-  cancelAnimationFrame(festivalRaf);
+  cancelAnimationFrame(fxRaf);
   const anim = (now: number) => {
     const p = (now - start) / dur;
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -961,9 +982,9 @@ function startFestival() {
       ctx.arc(x, m.y, m.r, 0, 6.2832); ctx.fill();
     }
     ctx.shadowBlur = 0;
-    festivalRaf = requestAnimationFrame(anim);
+    fxRaf = requestAnimationFrame(anim);
   };
-  festivalRaf = requestAnimationFrame(anim);
+  fxRaf = requestAnimationFrame(anim);
 }
 listen("gift:festival", () => {
   startFestival();
@@ -1156,6 +1177,10 @@ function drawFrame(ts: number) {
   // above is unchanged, so brightness still shifts gradually at every level.
   const glowStr = (glowVal * glowIntensity).toFixed(3);
   if (glowStr !== lastGlowStr) { lastGlowStr = glowStr; glow.style.opacity = glowStr; }
+  // Coalesced companions: apply the latest roaming-buddy pose and advance the idle-buddy sway
+  // here, so their DOM writes ride this frame's single present instead of separate timers/events.
+  if (pendingBuddy) { applyBuddyVisual(pendingBuddy); pendingBuddy = null; }
+  advanceIdleBuddy(ts);
 }
 
 // Render loop. At 30/60 fps we drive with setTimeout, NOT requestAnimationFrame: an
@@ -1168,11 +1193,23 @@ function startLoop() {
   loopGen++;
   const gen = loopGen;
   loopRunning = true;
+  // Self-correcting cadence: steer toward an ABSOLUTE next-frame time instead of adding a
+  // fixed delay AFTER each draw (which makes the real period = drawTime + delay, drifting
+  // slower and jittering with draw cost). Subtracting the elapsed time keeps the average at
+  // the target fps. Still setTimeout (not rAF), so the page damages only at the cap — the
+  // deliberate low-GPU/no-continuous-present design is unchanged.
+  let next = performance.now();
   const step = () => {
     if (gen !== loopGen) return; // superseded by a newer loop
     drawFrame(performance.now());
-    if (frameRate <= 0) requestAnimationFrame(step);
-    else setTimeout(step, 1000 / frameRate);
+    if (frameRate <= 0) { requestAnimationFrame(step); return; } // "monitor" mode keeps rAF
+    const period = 1000 / frameRate;
+    next += period;
+    const now = performance.now();
+    // If a stall (GC / OS throttle) put us more than ~2 periods behind, resync to now instead
+    // of firing a catch-up burst (which would fast-forward the scene); dt is clamped anyway.
+    if (now - next > 2 * period) next = now;
+    setTimeout(step, Math.max(0, next - now));
   };
   step();
 }
