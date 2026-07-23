@@ -31,7 +31,7 @@ Status: **feature-complete, v1.0.0** (Phases 0–13 done). The personalized NSIS
 **Easter eggs & the gift**
 - A **Tower of Tomes** spellbook (per-element cast counts + a sealed forbidden page) that whispers **milestone lines** as her lifetime casts pass 10 / 50 / 100 / 365; a conjured **born-from-ink bird**; a weekend **Silver-Eve** festival of falling stars (a named fudemushi looks up to watch); a one-time first-run welcome; a colorblind palette; and an in-world **casting self-discovery** nudge.
 - Once all four elements are inscribed, an occasional ink-mote drifts by as a tiny **✦ star** — the world's own breadcrumb toward the hidden fifth seal.
-- **The dedication:** drawing the secret ✦ pentacle reveals a parchment storybook written *For Lorraine*; it also **auto-blooms on her birthday (July 25)**.
+- **The dedication:** drawing the secret ✦ pentacle reveals a parchment storybook written *For Lorraine* — the dedication, then **pages of birthday wishes from her friends**, and a closing **credits** page; it also **auto-blooms on her birthday (July 25)**.
 
 **Robustness (it must just work, unattended)**
 - Survives explorer restarts, display/DPI changes, and **sleep / wake / lock / unlock** (re-attaches the wallpaper automatically).
@@ -77,7 +77,7 @@ pnpm tauri build
 
 ## Personalizing the gift
 
-The dedication, recipient name, birthday, and Silver-Eve date live in `Gift::default()` in [`src-tauri/src/settings.rs`](src-tauri/src/settings.rs); the daily **Almanac** lines live in [`src/atelier/almanac.ts`](src/atelier/almanac.ts) (verbatim *Witch Hat Atelier* quotes — salt in your own if you like). Edit them (so they ship in the binary), then re-cut the installer with `pnpm tauri build`. The recipient discovers the secret ✦ pentacle herself; setting a recipient name makes the storybook title itself *"For …"*.
+The dedication, recipient name, birthday, and Silver-Eve date live in `Gift::default()` in [`src-tauri/src/settings.rs`](src-tauri/src/settings.rs); the friends' **birthday wishes** and the **credits** page live in [`src/atelier/dedication.ts`](src/atelier/dedication.ts); the daily **Almanac** lines live in [`src/atelier/almanac.ts`](src/atelier/almanac.ts) (verbatim *Witch Hat Atelier* quotes — salt in your own if you like). Edit them (so they ship in the binary), then re-cut the installer with `pnpm tauri build`. The recipient discovers the secret ✦ pentacle herself; setting a recipient name makes the storybook title itself *"For …"*.
 
 ## Layout
 
