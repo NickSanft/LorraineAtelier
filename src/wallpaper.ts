@@ -21,7 +21,6 @@ import { pickLine } from "./atelier/almanac";
 import { moonPhase } from "./atelier/moon";
 import { attuned, drawGlyphPath } from "./atelier/draw/viz";
 import { makeSealState, stepSeal, drawSeal } from "./atelier/draw/seal";
-import { glowOpacity } from "./atelier/draw/glow";
 
 // Wallpaper renderer — ported faithfully from mockup/Atelier.dc.html (the spec).
 // Display-only: the wallpaper receives no input, so interactive bits (dock, casting,
@@ -1145,6 +1144,48 @@ let quietActive = false; // quiet-hours "embers" dim active
 let quietLevel = 0; // eased 0..1; gentles the seal/motes/glow reactivity at night
 let ringSpeed = 0.5; // seal ring rotation multiplier (1 / 0.5 / 0.25; settings:ringspeed) — half-speed default
 let glowIntensity = 1; // scales the audio-reactive bloom (0 = off .. 1 default .. 1.4 vivid; settings:glowintensity)
+// ---- opt-in frame-interval diagnostic (OFF by default; the per-frame record is ~free) ----
+// Attach the wallpaper's WebView2 remote devtools and call __atelierFrameStats() for a
+// min/median/p95/max + late-frame readout, or __atelierFrameHud(true) for an on-desktop HUD
+// (the window sits behind the icons, so the HUD shows over empty desktop). Interpreting the
+// deltas: ~33ms flat = healthy; oscillating ~31/47 = the 15.6ms timer grid; spikes to hundreds
+// of ms = throttling; occasional mid spikes on an otherwise-flat stream = GC.
+const FRAMELOG_N = 600;
+const frameLog = new Float64Array(FRAMELOG_N);
+let frameLogHead = 0, frameLogCount = 0;
+function recordFrameInterval(ms: number) {
+  frameLog[frameLogHead] = ms;
+  frameLogHead = (frameLogHead + 1) % FRAMELOG_N;
+  if (frameLogCount < FRAMELOG_N) frameLogCount++;
+}
+function frameStats(log = true) {
+  const n = frameLogCount;
+  if (!n) { if (log) console.log("[atelier] no frames recorded yet"); return null; }
+  const a = Array.from(frameLog.subarray(0, n)).sort((x, y) => x - y);
+  const q = (p: number) => a[Math.min(n - 1, Math.floor(p * n))];
+  const budget = frameRate > 0 ? 1000 / frameRate : 16.7;
+  let late = 0;
+  for (const v of a) if (v > budget * 1.5) late++;
+  const r = { n, budgetMs: +budget.toFixed(1), min: +a[0].toFixed(1), median: +q(0.5).toFixed(1), p95: +q(0.95).toFixed(1), max: +a[n - 1].toFixed(1), lateFrames: late };
+  if (log) console.log("[atelier frame-interval]", JSON.stringify(r));
+  return r;
+}
+let frameHud: HTMLElement | null = null, frameHudTimer = 0;
+const g = window as unknown as Record<string, unknown>;
+g.__atelierFrameStats = () => frameStats(true);
+g.__atelierFrameHud = (on: boolean) => {
+  if (on && !frameHud) {
+    frameHud = document.createElement("div");
+    frameHud.style.cssText = "position:fixed;left:8px;top:8px;z-index:2147483647;font:12px monospace;color:#3fd6c6;background:rgba(0,0,0,.62);padding:4px 7px;border-radius:5px;pointer-events:none;white-space:pre";
+    document.body.appendChild(frameHud);
+    const tick = () => { if (!frameHud) return; const r = frameStats(false); if (r) frameHud.textContent = `med ${r.median}  p95 ${r.p95}  max ${r.max}ms\nlate ${r.lateFrames}/${r.n}  budget ${r.budgetMs}ms`; frameHudTimer = window.setTimeout(tick, 1500); };
+    tick();
+  } else if (!on && frameHud) { clearTimeout(frameHudTimer); frameHud.remove(); frameHud = null; }
+};
+
+// Reused scratch so drawFrame doesn't allocate a Bands object every frame during quiet hours.
+const scaledBands = { bass: 0, mid: 0, high: 0 };
+
 // Drive the ambient loop with setTimeout, NOT requestAnimationFrame. An active rAF
 // loop keeps Chromium's compositor in continuous "animating" mode, so it PRESENTS
 // every vsync (e.g. 175 Hz) even though we only redraw at 30 Hz — confirmed via
@@ -1153,12 +1194,20 @@ let glowIntensity = 1; // scales the audio-reactive bloom (0 = off .. 1 default 
 // presents ~30/s. Motion is dt-based, so cadence is unchanged. (Casting/bloom keep
 // their own short-lived rAF loops — fine, they're transient.)
 function drawFrame(ts: number) {
-  const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0.033;
+  const interval = lastTs ? ts - lastTs : 0;
+  const dt = lastTs ? Math.min(0.05, interval / 1000) : 0.033;
   lastTs = ts;
+  if (interval) recordFrameInterval(interval);
   quietLevel += ((quietActive ? 1 : 0) - quietLevel) * 0.03; // ease the night calm (~2s)
   const raw = currentBands(ts); // generative or real (attuned) audio
   const qf = 1 - quietLevel * 0.55; // quiet hours gentle the reactivity
-  const b = quietLevel > 0.01 ? { bass: raw.bass * qf, mid: raw.mid * qf, high: raw.high * qf } : raw;
+  // Quiet hours scale the reactivity into a REUSED scratch object (no per-frame alloc); the
+  // value is consumed synchronously below (drawAmbientFrame/drawVizFrame copy what they need).
+  let b = raw;
+  if (quietLevel > 0.01) {
+    scaledBands.bass = raw.bass * qf; scaledBands.mid = raw.mid * qf; scaledBands.high = raw.high * qf;
+    b = scaledBands;
+  }
   drawAmbientFrame(ts, b);
   drawVizFrame(ts, b, dt, takeBeat(), currentTempo()); // advances sealState (smoothed bands + pace)
   // Rotate the decorative clock/seal rings (was an infinite CSS animation). They live
@@ -1171,7 +1220,11 @@ function drawFrame(ts: number) {
   // Glow follows the seal's already-enveloped bass, then eases again so brightness
   // shifts gradually — no rapid flicker (photosensitivity-friendly). Skip the DOM write
   // once the rounded value settles (a still/quiet scene costs nothing here).
-  const glowTarget = parseFloat(glowOpacity({ bass: sealState.bass, mid: sealState.mid, high: sealState.high }, pal));
+  // Inline of glowOpacity(): only .bass is used, so compute the number directly instead of
+  // allocating a Bands object + a toFixed string + a parseFloat round-trip every frame. The
+  // final opacity is re-rounded to 3 decimals at the DOM write below, so dropping the interim
+  // rounding is imperceptible (< 0.001 on the eased target).
+  const glowTarget = pal.glowMax * (0.12 + sealState.bass * 0.85);
   glowVal += (glowTarget - glowVal) * 0.07;
   // Scale by the user's glow-intensity setting (0 turns the bloom off entirely). The easing
   // above is unchanged, so brightness still shifts gradually at every level.
