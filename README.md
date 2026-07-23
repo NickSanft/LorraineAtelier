@@ -22,9 +22,11 @@ Status: **feature-complete, v1.0.0** (Phases 0–13 done). The personalized NSIS
 
 **The brushbuddy**
 - The canon *fudemushi* — a hand-drawn ink companion that roams across all monitors, can be **picked up and dragged** (it animates ~5× faster while held), and accepts a custom sprite.
+- A companion **idle fudemushi** that settles onto the desktop once the fudemushi hatches (your first cast, through the **naming rite**) and sways gently in place — **movable, resizable, and independently toggleable** like any other widget.
 
 **Audio visualizer**
 - Generative by default; one tap of **Attune** switches to live **WASAPI loopback** so the seal breathes with whatever's playing — and **follows the default output** if you switch devices mid-song. Its **glow intensity** is configurable (Off → Vivid), doubling as a gentle brightness control.
+- At the seal's heart the four elements slowly cycle as hand-inked, **canon-flavoured sigils** (fire / water / wind / earth) — original glyphs evoking *Witch Hat Atelier*'s bespoke marks, distinct from the alchemical △▽○□ you draw to cast.
 
 **Easter eggs & the gift**
 - A **Tower of Tomes** spellbook (per-element cast counts + a sealed forbidden page) that whispers **milestone lines** as her lifetime casts pass 10 / 50 / 100 / 365; a conjured **born-from-ink bird**; a weekend **Silver-Eve** festival of falling stars (a named fudemushi looks up to watch); a one-time first-run welcome; a colorblind palette; and an in-world **casting self-discovery** nudge.
