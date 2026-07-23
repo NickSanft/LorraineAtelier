@@ -43,6 +43,16 @@
       .sb-seal { text-align: center; color: #9c6f2a; font-size: 28px; margin-top: 14px; opacity: .85; }
       /* blank verso (the left page of each opening) — parchment with the gutter shade on its RIGHT (spine) edge */
       .sb-blank::before { left: auto; right: 0; background: linear-gradient(to left, rgba(70,48,18,.22), transparent); }
+      /* Divider page that opens the friends' birthday wishes. */
+      .sb-divider { font-style: italic; text-transform: none; letter-spacing: .04em; font-size: 19px; }
+      /* Friends' birthday-wish pages: the message centred in italic, a right-aligned attribution. */
+      .sb-quote { font-size: 17px; line-height: 1.66; font-style: italic; text-align: center; margin: 0 6px; color: #3a2c1a; }
+      .sb-attr { text-align: right; font-style: italic; font-size: 15px; margin-top: 16px; color: #5a4628; }
+      /* Credits page: each contributor stacked (name over role), centred. */
+      .sb-credits { margin-top: 4px; }
+      .sb-credit { text-align: center; margin-bottom: 12px; }
+      .sb-credit-name { display: block; font-family: "Cinzel", serif; font-size: 15px; letter-spacing: .06em; color: #7a5a2a; }
+      .sb-credit-role { display: block; font-style: italic; font-size: 13.5px; color: #5a4628; margin-top: 1px; }
       #phaseLabel { font-family: "Cinzel", serif; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: var(--c-gold); text-shadow: 0 0 14px rgba(232,184,74,.45); }
       #cast { width: min(58vmin, 520px); height: min(58vmin, 520px); display: block; cursor: crosshair; touch-action: none; }
       #hud {

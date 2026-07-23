@@ -41,7 +41,7 @@ impl Default for Gift {
                 "You found the secret star — the one seal written in no tome. It holds a spell that needs no incantation: that you are seen exactly as you are, loved beyond all measure, and that the world is warmer and brighter for your being in it.".into(),
                 "Happy birthday, Lorraine. May your year overflow with quiet wonders — and may you never forget how deeply treasured you are.".into(),
             ],
-            signature: "— with all my love".into(),
+            signature: "— with all our love".into(),
             birthday: "07-25".into(),
             silver_eve: "weekends".into(),
         }

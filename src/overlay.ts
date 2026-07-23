@@ -5,6 +5,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { PageFlip } from "page-flip/dist/js/page-flip.module.js";
 import { drawGlyphPath } from "./atelier/draw/viz";
 import type { Sigil } from "./atelier/palette";
+import { WISHES, WISHES_TITLE, CREDITS, type Wish, type Credit } from "./atelier/dedication";
 
 // Casting overlay — the two-phase slate (the ONLY surface that takes pointer
 // input; the wallpaper behind the icons cannot). Draw the central SIGIL, then
@@ -505,33 +506,91 @@ function blankLeaf(): HTMLElement {
   return b;
 }
 
+// A parchment right-hand leaf + its inner content column (styled by the .sb-* CSS).
+function makeLeaf(): { leaf: HTMLElement; inner: HTMLElement } {
+  const leaf = document.createElement("div");
+  leaf.className = "sb-leaf sb-pg";
+  const inner = document.createElement("div");
+  inner.className = "sb-pg-inner";
+  leaf.appendChild(inner);
+  return { leaf, inner };
+}
+function addOrnament(inner: HTMLElement) {
+  const o = document.createElement("div"); o.className = "sb-o"; o.textContent = "✦"; inner.appendChild(o);
+}
+function addHeading(inner: HTMLElement, heading: string) {
+  const h = document.createElement("div"); h.className = "sb-h"; h.textContent = heading; inner.appendChild(h);
+  addOrnament(inner);
+}
+// A dedication paragraph page (the first carries the "For …" heading).
+function dedicationLeaf(text: string, heading?: string): HTMLElement {
+  const { leaf, inner } = makeLeaf();
+  if (heading) addHeading(inner, heading);
+  const para = document.createElement("p"); para.className = "sb-p"; para.textContent = text; inner.appendChild(para);
+  return leaf;
+}
+// The divider page that opens the friends' wishes.
+function dividerLeaf(title: string): HTMLElement {
+  const { leaf, inner } = makeLeaf();
+  const h = document.createElement("div"); h.className = "sb-h sb-divider"; h.textContent = title; inner.appendChild(h);
+  addOrnament(inner);
+  return leaf;
+}
+// One friend's birthday wish + its attribution.
+function wishLeaf(w: Wish): HTMLElement {
+  const { leaf, inner } = makeLeaf();
+  addOrnament(inner);
+  const q = document.createElement("p"); q.className = "sb-quote"; q.textContent = w.wish; inner.appendChild(q);
+  const a = document.createElement("div"); a.className = "sb-attr"; a.textContent = `— ${w.from}`; inner.appendChild(a);
+  return leaf;
+}
+// The dedication's closing page: the last paragraph, the signature, and the ✦ pentacle seal.
+function closeLeaf(text: string, signature: string, heading?: string): HTMLElement {
+  const { leaf, inner } = makeLeaf();
+  if (heading) addHeading(inner, heading);
+  const para = document.createElement("p"); para.className = "sb-p"; para.textContent = text; inner.appendChild(para);
+  const sig = document.createElement("div"); sig.className = "sb-sig"; sig.textContent = signature; inner.appendChild(sig);
+  const seal = document.createElement("div"); seal.className = "sb-seal"; seal.textContent = "✦"; inner.appendChild(seal);
+  return leaf;
+}
+// The closing credits page — each contributor stacked (name over role).
+function creditsLeaf(credits: Credit[]): HTMLElement {
+  const { leaf, inner } = makeLeaf();
+  const h = document.createElement("div"); h.className = "sb-h"; h.textContent = "Credits"; inner.appendChild(h);
+  addOrnament(inner);
+  const list = document.createElement("div"); list.className = "sb-credits";
+  for (const c of credits) {
+    const row = document.createElement("div"); row.className = "sb-credit";
+    const nm = document.createElement("span"); nm.className = "sb-credit-name"; nm.textContent = c.name;
+    const rl = document.createElement("span"); rl.className = "sb-credit-role"; rl.textContent = c.role;
+    row.appendChild(nm); row.appendChild(rl); list.appendChild(row);
+  }
+  inner.appendChild(list);
+  return leaf;
+}
+
 function buildBookPages(gift: GiftDto): HTMLElement[] {
   const pages: HTMLElement[] = [];
-  // Each opening = a BLANK left page + the dedication on the right page. A leading
-  // blank starts the book on (blank | first page); a trailing blank backs the last
-  // page so a flip never reveals empty space. No cover leaves (they render as stray
-  // dark pages in a two-page spread).
+  // The right-hand pages, in order: the dedication's opening paragraphs → a divider → one
+  // page per friend's wish → the dedication's close (last paragraph + signature + ✦ seal) →
+  // credits. Each right page is backed by a leading BLANK verso so a two-page spread never
+  // reveals bare board; a trailing blank backs the final leaf. (No cover leaves — they
+  // render as stray dark pages in a spread.)
   const heading = gift.recipientName ? `For ${gift.recipientName}` : gift.heading;
   const paras = gift.paragraphs.length ? gift.paragraphs : [""];
-  sbContent = paras.length;
-  paras.forEach((p, i) => {
-    pages.push(blankLeaf());
-    const leaf = document.createElement("div");
-    leaf.className = "sb-leaf sb-pg";
-    const inner = document.createElement("div");
-    inner.className = "sb-pg-inner";
-    if (i === 0) {
-      const h = document.createElement("div"); h.className = "sb-h"; h.textContent = heading; inner.appendChild(h);
-      const o = document.createElement("div"); o.className = "sb-o"; o.textContent = "✦"; inner.appendChild(o);
-    }
-    const para = document.createElement("p"); para.className = "sb-p"; para.textContent = p; inner.appendChild(para);
-    if (i === paras.length - 1) {
-      const sig = document.createElement("div"); sig.className = "sb-sig"; sig.textContent = gift.signature; inner.appendChild(sig);
-      const seal = document.createElement("div"); seal.className = "sb-seal"; seal.textContent = "✦"; inner.appendChild(seal);
-    }
-    leaf.appendChild(inner);
-    pages.push(leaf);
-  });
+  const opening = paras.slice(0, -1);      // dedication pages shown before the wishes
+  const closing = paras[paras.length - 1]; // the "Happy birthday … with all our love" close
+
+  const right: HTMLElement[] = [];
+  opening.forEach((p, i) => right.push(dedicationLeaf(p, i === 0 ? heading : undefined)));
+  right.push(dividerLeaf(WISHES_TITLE));
+  for (const w of WISHES) right.push(wishLeaf(w));
+  // If the gift were a single paragraph (no opening pages), the heading rides the close.
+  right.push(closeLeaf(closing, gift.signature, opening.length === 0 ? heading : undefined));
+  right.push(creditsLeaf(CREDITS));
+
+  sbContent = right.length; // one nav dot per right-hand page
+  for (const leaf of right) { pages.push(blankLeaf()); pages.push(leaf); }
   pages.push(blankLeaf()); // trailing blank → the last leaf always has a page behind it
   return pages;
 }
