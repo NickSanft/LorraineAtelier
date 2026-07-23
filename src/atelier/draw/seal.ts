@@ -59,12 +59,30 @@ export function stepSeal(s: SealState, b: Bands, dt: number, beatHint = false, t
   const rotf = tf * ringSpeed; // ring rotation also scaled by the user's ring-speed toggle
   s.outer += dt * (0.14 + s.bass * 0.7) * rotf;
   s.inner -= dt * (0.2 + s.high * 1.0) * rotf;
-  for (const rp of s.ripples) {
+  // Advance + compact expired ripples IN PLACE. Was s.ripples.filter(...), which allocated a
+  // fresh array + predicate closure every frame even when nothing expired (the generative
+  // signal rarely beats, so the list is usually empty/unchanged — a pure wasted realloc).
+  let w = 0;
+  for (let i = 0; i < s.ripples.length; i++) {
+    const rp = s.ripples[i];
     rp.r += dt * (90 + s.loud * 100) * tf; // ripples follow the music's pace (not the ring-speed)
     rp.a -= dt * 0.5; // slower fade
+    if (rp.a > 0) s.ripples[w++] = rp;
   }
-  s.ripples = s.ripples.filter((rp) => rp.a > 0);
+  s.ripples.length = w;
 }
+
+// Per-frame scratch, hoisted to module scope so drawSeal (called every frame) doesn't allocate
+// a rings array + 3 object literals + a forEach closure + two setLineDash arrays each frame.
+// drawSeal is never re-entrant (one synchronous call per frame), so a shared scratch is safe.
+// `frac`/`wd` are constant; only `rot`/`band` are refreshed each frame.
+const SCRATCH_RINGS = [
+  { frac: 0.98, rot: 0, band: 0, wd: 2.0 },
+  { frac: 0.74, rot: 0, band: 0, wd: 1.5 },
+  { frac: 0.5, rot: 0, band: 0, wd: 1.3 },
+];
+const SCRATCH_DASH: [number, number] = [0, 0]; // setLineDash copies internally → safe to reuse
+const EMPTY_DASH: number[] = [];
 
 /**
  * Render the seal. Caller supplies an already-DPR-scaled 2D context + CSS-pixel
@@ -92,14 +110,16 @@ export function drawSeal(
 
   // resonance ripples (a beat sends ink dispersing outward). They fade to nothing as
   // they near the enlarged canvas edge, so they dissolve cleanly instead of clipping.
+  // strokeStyle/shadowColor are teal for the ripples AND the rings AND the particles below,
+  // so set them once here (no per-iteration re-assignment / paint-state re-validation).
+  ctx.strokeStyle = teal;
+  ctx.shadowColor = teal;
   const rmax = Math.min(w, h) / 2 - 4;
   for (const rp of s.ripples) {
     const edge = Math.max(0, 1 - rp.r / rmax);
     ctx.beginPath();
-    ctx.strokeStyle = teal;
     ctx.globalAlpha = rp.a * 0.5 * edge;
     ctx.lineWidth = 1.4 + rp.a * 1.4;
-    ctx.shadowColor = teal;
     ctx.shadowBlur = 10 * rp.a;
     ctx.arc(0, 0, rp.r, 0, 6.2832);
     ctx.stroke();
@@ -111,12 +131,12 @@ export function drawSeal(
   // no "not-quite-a-circle" discontinuity) and never pops when the seal breathes.
   const baseR = (Math.min(w, h) / 2 - 8) * 0.57; // R at loud=bass=0 (matches the radius above)
   const DASH_PERIOD = 14; // nominal px between dashes → ~clean long-dash look
-  const rings = [
-    { frac: 0.98, rot: s.outer, band: s.mid, wd: 2.0 },
-    { frac: 0.74, rot: s.inner, band: s.high, wd: 1.5 },
-    { frac: 0.5, rot: s.outer * 1.4, band: s.bass, wd: 1.3 },
-  ];
-  rings.forEach((rg, i) => {
+  // Refresh only the per-frame fields of the hoisted scratch (frac/wd are constant).
+  SCRATCH_RINGS[0].rot = s.outer;       SCRATCH_RINGS[0].band = s.mid;
+  SCRATCH_RINGS[1].rot = s.inner;       SCRATCH_RINGS[1].band = s.high;
+  SCRATCH_RINGS[2].rot = s.outer * 1.4; SCRATCH_RINGS[2].band = s.bass;
+  for (let i = 0; i < 3; i++) {
+    const rg = SCRATCH_RINGS[i];
     const isOuter = i === 0;
     const r = R * rg.frac; // actual (audio-breathing) radius
     const n = Math.max(24, Math.round((2 * Math.PI * baseR * rg.frac) / DASH_PERIOD)); // stable dash count
@@ -129,24 +149,30 @@ export function drawSeal(
     ctx.save();
     ctx.rotate(rg.rot);
     ctx.beginPath();
-    ctx.strokeStyle = teal;
-    // The outer ring breathes on the SLOW loudness envelope (gradual); the inner
-    // rings snap with bass (lively). Keeps the outermost circle from flickering.
+    // strokeStyle/shadowColor stay teal from before the ripples loop (preserved through
+    // save/restore). The outer ring breathes on the SLOW loudness envelope (gradual); the
+    // inner rings snap with bass (lively). Keeps the outermost circle from flickering.
     ctx.globalAlpha = 0.32 + (isOuter ? s.loud * 0.5 : rg.band * 0.6);
     ctx.lineWidth = rg.wd + rg.band * 1.4 + (isOuter ? s.loud * 2.2 : s.bass * 3.2);
-    ctx.setLineDash([dash, Math.max(0.6, period - dash)]);
+    SCRATCH_DASH[0] = dash; SCRATCH_DASH[1] = Math.max(0.6, period - dash);
+    ctx.setLineDash(SCRATCH_DASH);
     ctx.lineDashOffset = -rg.rot * 60;
-    ctx.shadowColor = teal;
     ctx.shadowBlur = 7 + (isOuter ? s.loud * 14 : s.bass * 20); // ink bleed
     ctx.arc(0, 0, r, 0, 6.2832);
     ctx.stroke();
     ctx.restore();
-  });
-  ctx.setLineDash([]);
+  }
+  ctx.setLineDash(EMPTY_DASH);
 
   // orbiting ink particles with short comet trails (ink has weight, trails off).
+  // strokeStyle/shadowColor are still teal; lineCap/lineWidth/shadowBlur are constant for all
+  // 26 this frame — set once. lineCap goes round HERE (after the dashed rings, which keep butt
+  // caps) exactly as before. Only globalAlpha + geometry vary per particle.
   const np = 26;
   const energy = s.mid * 0.55 + s.high * 0.7; // mid+treble drive particle vigor
+  ctx.lineCap = "round";
+  ctx.lineWidth = 1.3 + energy * 4.0;
+  ctx.shadowBlur = 7 + energy * 14;
   for (let i = 0; i < np; i++) {
     const a = (i / np) * 6.2832 + s.outer * 1.6;
     // particles push outward on bass and wobble on mid → clearly audio-reactive
@@ -156,27 +182,22 @@ export function drawSeal(
     const tail = 0.05 + s.mid * 0.22 + s.high * 0.1; // longer comet with energy
     const xt = Math.cos(a - tail) * rr, yt = Math.sin(a - tail) * rr;
     ctx.beginPath();
-    ctx.strokeStyle = teal;
     ctx.globalAlpha = Math.min(1, 0.2 + energy * 1.1 * (i % 4 === 0 ? 1 : 0.55));
-    ctx.lineWidth = 1.3 + energy * 4.0;
-    ctx.lineCap = "round";
-    ctx.shadowColor = teal;
-    ctx.shadowBlur = 7 + energy * 14;
     ctx.moveTo(xt, yt);
     ctx.lineTo(x, y);
     ctx.stroke();
   }
 
-  // gold keystone spokes — treble "ignites" them.
-  ctx.shadowBlur = 0;
+  // gold keystone spokes — treble "ignites" them. All 8 share one style this frame, so set it
+  // once (geometry is the only per-spoke variable).
+  ctx.strokeStyle = gold;
+  ctx.shadowColor = gold;
+  ctx.globalAlpha = 0.15 + s.high * 0.9;
+  ctx.lineWidth = 1.0 + s.high * 1.8;
+  ctx.shadowBlur = s.high * 26;
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * 6.2832 + s.outer * 0.2;
     ctx.beginPath();
-    ctx.strokeStyle = gold;
-    ctx.globalAlpha = 0.15 + s.high * 0.9;
-    ctx.lineWidth = 1.0 + s.high * 1.8;
-    ctx.shadowColor = gold;
-    ctx.shadowBlur = s.high * 26;
     ctx.moveTo(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5);
     ctx.lineTo(Math.cos(a) * R * 0.98, Math.sin(a) * R * 0.98);
     ctx.stroke();

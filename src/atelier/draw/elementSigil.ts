@@ -77,22 +77,33 @@ const GLYPHS: Record<Element, Glyph> = {
 
 const TAU = 6.28318530718;
 
+// Tokenize an SVG path once and cache it — the glyph paths are compile-time constants, so
+// without this tracePath re-ran a regex `.match` (a fresh array + a string per token) on
+// every stroke of every frame. The cached token array is only ever READ below, so sharing
+// it is safe. Keyed by the path string (there are only a handful of distinct glyph paths).
+const PATH_TOKENS = new Map<string, string[]>();
+function tokenize(d: string): string[] {
+  let t = PATH_TOKENS.get(d);
+  if (!t) { t = d.match(/[a-zA-Z]|-?\d*\.?\d+/g) || []; PATH_TOKENS.set(d, t); }
+  return t;
+}
+
 // Trace an SVG path (the subset our glyphs use: M/L/C/Q/Z, absolute + relative) onto the
 // context with plain moveTo/lineTo/bezierCurveTo/quadraticCurveTo — no Path2D, so it runs
 // under both WebView2 and node/@napi-rs/canvas (matching drawGlyphPath's approach). Caller
-// wraps in beginPath()/stroke().
+// wraps in beginPath()/stroke(). Consumes the memoized token stream left-to-right (the
+// inline `toks[i++]` reads preserve the original argument evaluation order exactly).
 function tracePath(ctx: CanvasRenderingContext2D, d: string): void {
-  const toks = d.match(/[a-zA-Z]|-?\d*\.?\d+/g) || [];
+  const toks = tokenize(d);
   let i = 0, cx = 0, cy = 0, sx = 0, sy = 0, cmd = "";
-  const n = () => parseFloat(toks[i++]);
   while (i < toks.length) {
     if (/[a-zA-Z]/.test(toks[i])) cmd = toks[i++];
     const rel = cmd === cmd.toLowerCase();
     switch (cmd.toUpperCase()) {
-      case "M": { let x = n(), y = n(); if (rel) { x += cx; y += cy; } ctx.moveTo(x, y); cx = sx = x; cy = sy = y; cmd = rel ? "l" : "L"; break; }
-      case "L": { let x = n(), y = n(); if (rel) { x += cx; y += cy; } ctx.lineTo(x, y); cx = x; cy = y; break; }
-      case "C": { let x1 = n(), y1 = n(), x2 = n(), y2 = n(), x = n(), y = n(); if (rel) { x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy; } ctx.bezierCurveTo(x1, y1, x2, y2, x, y); cx = x; cy = y; break; }
-      case "Q": { let x1 = n(), y1 = n(), x = n(), y = n(); if (rel) { x1 += cx; y1 += cy; x += cx; y += cy; } ctx.quadraticCurveTo(x1, y1, x, y); cx = x; cy = y; break; }
+      case "M": { let x = parseFloat(toks[i++]), y = parseFloat(toks[i++]); if (rel) { x += cx; y += cy; } ctx.moveTo(x, y); cx = sx = x; cy = sy = y; cmd = rel ? "l" : "L"; break; }
+      case "L": { let x = parseFloat(toks[i++]), y = parseFloat(toks[i++]); if (rel) { x += cx; y += cy; } ctx.lineTo(x, y); cx = x; cy = y; break; }
+      case "C": { let x1 = parseFloat(toks[i++]), y1 = parseFloat(toks[i++]), x2 = parseFloat(toks[i++]), y2 = parseFloat(toks[i++]), x = parseFloat(toks[i++]), y = parseFloat(toks[i++]); if (rel) { x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy; } ctx.bezierCurveTo(x1, y1, x2, y2, x, y); cx = x; cy = y; break; }
+      case "Q": { let x1 = parseFloat(toks[i++]), y1 = parseFloat(toks[i++]), x = parseFloat(toks[i++]), y = parseFloat(toks[i++]); if (rel) { x1 += cx; y1 += cy; x += cx; y += cy; } ctx.quadraticCurveTo(x1, y1, x, y); cx = x; cy = y; break; }
       case "Z": ctx.closePath(); cx = sx; cy = sy; break;
       default: i++;
     }

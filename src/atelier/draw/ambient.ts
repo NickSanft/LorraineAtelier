@@ -41,6 +41,11 @@ export function drawAmbient(
   pal: CanvasPalette,
 ): void {
   ctx.clearRect(0, 0, w, h);
+  // The mote/gold self-glow shadow colours are constant for the frame (they only depend on the
+  // palette), so build the two strings ONCE instead of per-mote per-frame. A soft self-coloured
+  // glow lets motes read against a bright (day) background too, not just the dark night scene.
+  const moteShadow = pal.mote + "0.9)";
+  const goldShadow = pal.glowColor + "0.9)";
   for (const m of motes) {
     m.y -= m.s * (0.6 + b.mid * 1.6);
     m.x += Math.sin(ts * 0.0004 + m.d) * 0.25;
@@ -49,9 +54,7 @@ export function drawAmbient(
     const al = m.a * (0.5 + 0.5 * Math.sin(ts * 0.001 + m.d));
     ctx.beginPath();
     ctx.fillStyle = col + al.toFixed(3) + ")";
-    // A soft self-coloured glow so motes read against a bright (day) background
-    // too, not just the dark night scene; gold motes glow a touch stronger.
-    ctx.shadowColor = (m.gold ? pal.glowColor : pal.mote) + "0.9)";
+    ctx.shadowColor = m.gold ? goldShadow : moteShadow; // gold motes glow a touch stronger
     ctx.shadowBlur = m.gold ? 10 : 7;
     ctx.arc(m.x, m.y, m.r, 0, 6.2832);
     ctx.fill();
