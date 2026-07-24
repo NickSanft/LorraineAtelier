@@ -1645,7 +1645,7 @@ fn set_buddy_name(app: AppHandle, name: String) -> String {
 #[tauri::command]
 fn preview_buddy_birth(app: AppHandle) -> String {
     let _ = app.emit("buddy:born", ());
-    "previewing fudemushi birth".into()
+    "previewing Brushbuddy birth".into()
 }
 
 /// Preview the naming rite (the first-cast hatching ceremony) on demand: position +
@@ -1705,7 +1705,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         }
     };
     let inscribe =
-        MenuItem::with_id(app, "inscribe", "Inscribe a sigil  (Ctrl+Alt+W)", true, None::<&str>)?;
+        MenuItem::with_id(app, "inscribe", "Palm Quire  (Ctrl+Alt+W)", true, None::<&str>)?;
     let attune =
         CheckMenuItem::with_id(app, "attune", "Attune to music", true, attuned0, None::<&str>)?;
     let mode =

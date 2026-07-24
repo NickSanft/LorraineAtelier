@@ -347,7 +347,7 @@ async function main() {
   buddyNameInput.value = (await invoke<SettingsDto>("get_settings").then((s) => s.buddyName).catch(() => "")) || "";
   buddyNameInput.addEventListener("change", () => {
     const name = buddyNameInput.value.trim();
-    invoke("set_buddy_name", { name }).then(() => append(`fudemushi named → ${name || "(unnamed)"}`));
+    invoke("set_buddy_name", { name }).then(() => append(`Brushbuddy named → ${name || "(unnamed)"}`));
   });
   const buddySpriteInput = document.getElementById("buddySprite") as HTMLInputElement;
   buddySpriteInput.value = (await invoke<SettingsDto>("get_settings").then((s) => s.buddySprite).catch(() => "")) || "";
@@ -493,7 +493,7 @@ async function main() {
   document.getElementById("previewSilver")!.addEventListener("click", () => invoke("preview_silvereve").then(() => append("previewing Silver Eve")));
   document.getElementById("previewMisfire")!.addEventListener("click", () => invoke("preview_petrify").then(() => append("previewing misfire (Petrification)")));
   document.getElementById("previewCastHint")!.addEventListener("click", () => invoke("preview_cast_hint").then(() => append("previewing casting nudge")));
-  document.getElementById("previewBuddyBirth")!.addEventListener("click", () => invoke("preview_buddy_birth").then(() => append("previewing fudemushi birth")));
+  document.getElementById("previewBuddyBirth")!.addEventListener("click", () => invoke("preview_buddy_birth").then(() => append("previewing Brushbuddy birth")));
   document.getElementById("previewNaming")!.addEventListener("click", () => invoke("preview_naming_rite").then(() => append("previewing naming rite")));
 
   document.getElementById("reattach")!.addEventListener("click", async () => {
