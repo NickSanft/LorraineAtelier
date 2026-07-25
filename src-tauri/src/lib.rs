@@ -630,7 +630,15 @@ fn check_birthday(app: &AppHandle) {
     {
         let (year, m, d, _wd) = local_ymd();
         let today = format!("{m:02}-{d:02}");
-        if today == gift.birthday && settings::get().last_birthday_year != year {
+        // Hold the auto-bloom back on a brand-new, never-used install: if nothing has been
+        // cast yet, let her take in the scene and discover the secret star herself first. The
+        // moment she has cast at least one spell (`discovered` non-empty — the reliable
+        // "engaged" signal; first_run only flips via the control panel, which isn't shown
+        // up-front), the next 60 s check surfaces the dedication.
+        if today == gift.birthday
+            && settings::get().last_birthday_year != year
+            && !settings::get().discovered.is_empty()
+        {
             settings::set_last_birthday_year(year);
             settings::set_secret_found(true);
             // Same emit as mark_secret_found: unlocks the Forbidden Page live AND lets the
